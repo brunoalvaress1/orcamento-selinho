@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Orçamentos</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+<style>
+  :root {
+    --brand: #2563eb;
+    --brand-dark: #1e40af;
+    --bg-soft: #f4f6fb;
+  }
+  body { background: var(--bg-soft); font-family: 'Segoe UI', system-ui, sans-serif; }
+  .navbar-brand { font-weight: 700; letter-spacing: .3px; }
+  .brand-btn { background: var(--brand); border-color: var(--brand); }
+  .brand-btn:hover { background: var(--brand-dark); border-color: var(--brand-dark); }
+  .card { border: none; border-radius: 14px; box-shadow: 0 2px 14px rgba(20,30,60,.08); }
+  .login-wrap { min-height: 100vh; display:flex; align-items:center; justify-content:center; }
+  .login-card { width: 100%; max-width: 420px; }
+  .nav-pills .nav-link.active { background: var(--brand); }
+  .badge-admin { background:#7c3aed; }
+  .badge-user { background:#0891b2; }
+  #configWarning { display:none; }
+  .produto-sugestao { cursor:pointer; }
+  .item-row td { vertical-align: middle; }
+  .app-hidden { display:none !important; }
+  footer.small-note { font-size:.8rem; color:#6b7280; }
+  .logo-preview { max-height:70px; max-width:180px; object-fit:contain; border:1px dashed #d1d5db; border-radius:8px; padding:4px; background:#fff; }
+
+  /* ---- resumo de totais no formulário ---- */
+  .resumo-box { background:#f8fafc; border-radius:10px; padding:14px 16px; }
+  .resumo-box .linha { display:flex; justify-content:space-between; font-size:.9rem; padding:3px 0; }
+  .resumo-box .linha.total { font-size:1.25rem; font-weight:800; color:var(--brand-dark); border-top:1px solid #e2e8f0; margin-top:6px; padding-top:8px; }
+
+  /* ---- preview / documento estilo "papel" ---- */
+  .doc-wrap { position: sticky; top: 16px; }
+  .documento {
+    background:#fff; border-radius: 12px; padding: 36px 34px; min-height: 560px;
+    box-shadow: 0 8px 30px rgba(20,30,60,.12); font-size:.86rem; color:#1f2937;
+  }
+  .doc-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+    border-bottom: 3px solid var(--brand); padding-bottom:18px; margin-bottom:22px; }
+  .doc-logo { max-height:78px; max-width:190px; object-fit:contain; margin-bottom:8px; display:block; }
+  .doc-empresa-nome { font-weight:800; font-size:1.15rem; color:var(--brand-dark); letter-spacing:.2px; }
+  .doc-empresa-info { color:#6b7280; font-size:.78rem; line-height:1.5; margin-top:2px; }
+  .doc-titulo { text-align:right; white-space:nowrap; }
+  .doc-titulo h5 { color:var(--brand); font-weight:800; letter-spacing:1.5px; margin-bottom:4px; font-size:1.05rem; }
+  .doc-data { color:#6b7280; font-size:.8rem; }
+  .doc-cliente { background:#f8fafc; border-radius:8px; padding:10px 14px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
+  .doc-cliente span { color:#6b7280; font-size:.75rem; text-transform:uppercase; letter-spacing:.5px; }
+  .doc-cliente strong { font-size:.95rem; color:#111827; }
+  .doc-table { width:100%; border-collapse:collapse; margin-bottom:18px; }
+  .doc-table thead th { background:#f1f5f9; color:#475569; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px;
+    padding:9px 10px; text-align:left; }
+  .doc-table tbody td { padding:9px 10px; border-bottom:1px solid #f1f5f9; font-size:.85rem; }
+  .doc-table tbody tr:nth-child(even) { background:#fafbfc; }
+  .doc-summary { max-width: 280px; margin-left:auto; }
+  .doc-summary .row-line { display:flex; justify-content:space-between; font-size:.85rem; padding:5px 0; color:#4b5563; }
+  .doc-summary .row-line.total { font-size:1.3rem; font-weight:800; color:var(--brand-dark);
+    border-top:2px solid var(--brand); margin-top:8px; padding-top:10px; }
+  .doc-footer-note { margin-top:28px; padding-top:14px; border-top:1px dashed #e2e8f0; color:#9ca3af; font-size:.72rem; text-align:center; }
+
+  .historico-item { border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:10px; transition:.15s; }
+  .historico-item:hover { border-color: var(--brand); box-shadow:0 2px 10px rgba(37,99,235,.08); }
+</style>
+</head>
+<body>
+
+<!-- ================= CONFIG WARNING ================= -->
+<div id="configWarning" class="alert alert-warning m-3">
+  <strong>Configuração necessária:</strong> edite as constantes <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code>
+  no início do script para conectar ao seu projeto Supabase.
+</div>
+
+<!-- ================= TELA DE LOGIN ================= -->
+<div id="loginScreen" class="login-wrap">
+  <div class="card login-card p-4">
+    <div class="text-center mb-3">
+      <h4 class="fw-bold" style="color:var(--brand-dark)"><i class="bi bi-receipt-cutoff"></i> Sistema de Orçamentos</h4>
+      <p class="text-muted mb-0" id="loginSubtitle">Entre com sua conta</p>
+    </div>
+
+    <div id="loginAlert" class="alert alert-danger py-2 d-none"></div>
+
+    <form id="loginForm" class="d-flex flex-column gap-2">
+      <label class="form-label mb-0 small">E-mail</label>
+      <input type="email" class="form-control" id="loginEmail" required>
+      <label class="form-label mb-0 small mt-1">Senha</label>
+      <input type="password" class="form-control" id="loginPassword" required>
+      <button type="submit" class="btn brand-btn text-white mt-3" id="loginBtn">Entrar</button>
+    </form>
+
+    <hr>
+    <p class="text-center small mb-1">Ainda não tem conta?</p>
+    <button class="btn btn-outline-secondary w-100" id="showRegisterBtn">Criar conta</button>
+
+    <form id="registerForm" class="d-none flex-column gap-2 mt-3">
+      <label class="form-label mb-0 small">Nome</label>
+      <input type="text" class="form-control" id="regNome" required>
+      <label class="form-label mb-0 small mt-1">E-mail</label>
+      <input type="email" class="form-control" id="regEmail" required>
+      <label class="form-label mb-0 small mt-1">Senha</label>
+      <input type="password" class="form-control" id="regPassword" minlength="6" required>
+      <button type="submit" class="btn brand-btn text-white mt-3">Cadastrar</button>
+      <button type="button" class="btn btn-link btn-sm" id="backToLoginBtn">Voltar ao login</button>
+    </form>
+
+    <div id="registerAlert" class="alert py-2 mt-2 d-none"></div>
+  </div>
+</div>
+
+<!-- ================= APP PRINCIPAL ================= -->
+<div id="appScreen" class="app-hidden">
+  <nav class="navbar navbar-expand-lg navbar-dark" style="background:var(--brand-dark)">
+    <div class="container-fluid">
+      <span class="navbar-brand"><i class="bi bi-receipt-cutoff"></i> <span id="empresaNomeNav">Sistema de Orçamentos</span></span>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge" id="roleBadge"></span>
+        <span class="text-white-50 small" id="userEmailLabel"></span>
+        <button class="btn btn-sm btn-outline-light" id="logoutBtn"><i class="bi bi-box-arrow-right"></i> Sair</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container my-4">
+    <ul class="nav nav-pills mb-4" id="mainTabs">
+      <li class="nav-item"><button class="nav-link active" data-tab="orcamento">Novo Orçamento</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="historico">Histórico</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="produtos">Produtos</button></li>
+      <li class="nav-item d-none" id="empresaTabItem"><button class="nav-link" data-tab="empresa">Dados da Empresa</button></li>
+    </ul>
+
+    <!-- ---- ABA ORÇAMENTO ---- -->
+    <div class="tab-pane" id="tab-orcamento">
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="card p-4 mb-3">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label small">Cliente</label>
+                <input type="text" class="form-control" id="orcCliente" placeholder="Nome do cliente">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small">Data</label>
+                <input type="date" class="form-control" id="orcData">
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4 mb-3">
+            <h6 class="fw-bold mb-3">Itens</h6>
+            <div class="row g-2 align-items-end mb-3">
+              <div class="col-md-5 position-relative">
+                <label class="form-label small">Produto</label>
+                <input type="text" class="form-control" id="itemProdutoInput" placeholder="Digite o nome do produto..." autocomplete="off">
+                <div id="produtoSugestoes" class="list-group position-absolute w-100" style="z-index:20;"></div>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small">Valor unit. (R$)</label>
+                <input type="number" step="0.01" class="form-control" id="itemValorInput">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small">Qtd</label>
+                <input type="number" step="1" min="1" value="1" class="form-control" id="itemQtdInput">
+              </div>
+              <div class="col-md-3">
+                <button class="btn brand-btn text-white w-100" id="addItemBtn"><i class="bi bi-plus-lg"></i> Adicionar</button>
+              </div>
+            </div>
+
+            <table class="table align-middle">
+              <thead>
+                <tr><th>Produto</th><th>Valor unit.</th><th>Qtd</th><th>Subtotal</th><th></th></tr>
+              </thead>
+              <tbody id="itensTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="card p-4 mb-3">
+            <h6 class="fw-bold mb-3">Desconto e frete</h6>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label small">Desconto</label>
+                <input type="number" step="0.01" min="0" class="form-control" id="orcDescontoValor" placeholder="0">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small">Tipo</label>
+                <select class="form-select" id="orcDescontoTipo">
+                  <option value="percent">% (porcentagem)</option>
+                  <option value="valor">R$ (valor fixo)</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small">Frete (R$)</label>
+                <input type="number" step="0.01" min="0" class="form-control" id="orcFrete" placeholder="0">
+              </div>
+            </div>
+
+            <div class="resumo-box mt-3">
+              <div class="linha"><span>Subtotal</span><span id="resSubtotal">R$ 0,00</span></div>
+              <div class="linha"><span>Desconto</span><span id="resDesconto">- R$ 0,00</span></div>
+              <div class="linha"><span>Frete</span><span id="resFrete">R$ 0,00</span></div>
+              <div class="linha total"><span>Total</span><span id="resTotal">R$ 0,00</span></div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button class="btn btn-outline-secondary" id="downloadPdfBtn"><i class="bi bi-file-earmark-pdf"></i> Baixar PDF</button>
+              <button class="btn btn-outline-primary" id="shareBtn"><i class="bi bi-share"></i> Compartilhar</button>
+              <button class="btn btn-success ms-auto" id="saveOrcamentoBtn"><i class="bi bi-check2-circle"></i> Salvar orçamento</button>
+            </div>
+            <div id="orcamentoAlert" class="alert py-2 mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="doc-wrap">
+            <div class="documento" id="documentoPreview"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---- ABA HISTÓRICO ---- -->
+    <div class="tab-pane d-none" id="tab-historico">
+      <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold mb-0">Orçamentos salvos</h6>
+          <button class="btn btn-sm btn-outline-secondary" id="refreshHistBtn"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
+        </div>
+        <div id="historicoList"></div>
+      </div>
+    </div>
+
+    <!-- ---- ABA PRODUTOS ---- -->
+    <div class="tab-pane d-none" id="tab-produtos">
+      <div class="card p-4 mb-3">
+        <h6 class="fw-bold mb-3">Cadastrar / atualizar produto</h6>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <input type="text" class="form-control" id="prodNomeInput" placeholder="Nome do produto">
+          </div>
+          <div class="col-md-3">
+            <input type="number" step="0.01" class="form-control" id="prodValorInput" placeholder="Valor (R$)">
+          </div>
+          <div class="col-md-3">
+            <button class="btn brand-btn text-white w-100" id="saveProdutoBtn">Salvar produto</button>
+          </div>
+        </div>
+        <div id="produtoAlert" class="alert py-2 mt-3 d-none"></div>
+      </div>
+
+      <div class="card p-4">
+        <h6 class="fw-bold mb-3">Produtos cadastrados</h6>
+        <table class="table">
+          <thead><tr><th>Produto</th><th>Valor</th><th></th></tr></thead>
+          <tbody id="produtosTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ---- ABA EMPRESA (admin) ---- -->
+    <div class="tab-pane d-none" id="tab-empresa">
+      <div class="card p-4">
+        <h6 class="fw-bold mb-3"><i class="bi bi-building"></i> Dados da empresa</h6>
+        <div class="row g-3">
+          <div class="col-md-12">
+            <label class="form-label small d-block">Logo da empresa</label>
+            <img id="logoPreviewImg" class="logo-preview d-none mb-2" src="">
+            <input type="file" accept="image/*" class="form-control" id="empLogoInput">
+            <div class="form-text">A logo aparece no orçamento e no PDF para todos os usuários — só o admin pode trocá-la.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Nome da empresa</label>
+            <input type="text" class="form-control" id="empNome">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">CNPJ</label>
+            <input type="text" class="form-control" id="empCnpj">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">Telefone</label>
+            <input type="text" class="form-control" id="empTelefone">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">E-mail</label>
+            <input type="email" class="form-control" id="empEmail">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label small">Endereço</label>
+            <input type="text" class="form-control" id="empEndereco">
+          </div>
+        </div>
+        <button class="btn brand-btn text-white mt-3" id="saveEmpresaBtn" style="width:fit-content">Salvar dados da empresa</button>
+        <div id="empresaAlert" class="alert py-2 mt-3 d-none"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="small-note text-center pb-4">
+    Conectado ao Supabase via REST API (fetch) — sem SDK externo.
+  </footer>
+</div>
+
+<!-- ================= MODAL: HISTÓRICO (abrir orçamento) ================= -->
+<div class="modal fade" id="historicoModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Orçamento</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="background:var(--bg-soft)">
+        <div class="documento" id="historicoDocPreview"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" id="historicoBaixarBtn"><i class="bi bi-file-earmark-pdf"></i> Baixar PDF</button>
+        <button class="btn btn-outline-primary" id="historicoCompartilharBtn"><i class="bi bi-share"></i> Compartilhar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: COMPARTILHAR (fallback) ================= -->
+<div class="modal fade" id="shareModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Compartilhar orçamento</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body d-flex flex-column gap-2">
+        <a id="shareWhatsappLink" target="_blank" class="btn btn-success text-start"><i class="bi bi-whatsapp"></i> Enviar pelo WhatsApp</a>
+        <a id="shareGmailLink" target="_blank" class="btn btn-danger text-start"><i class="bi bi-envelope"></i> Enviar por e-mail</a>
+        <div class="form-text mt-1">O texto do orçamento é preenchido automaticamente. Se quiser anexar o arquivo, baixe o PDF antes e anexe manualmente.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======================================================================
+   CONFIGURAÇÃO — troque pelos dados do SEU projeto Supabase
+   ====================================================================== */
+const SUPABASE_URL = 'https://efwqxwdyclwqwavvlqpc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmd3F4d2R5Y2x3cXdhdnZscXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTY3MzIsImV4cCI6MjA5OTc5MjczMn0.FZFrlOsEotmobX4Sku88RMbGxPk_k2lO_ZalfiusZAs';
+
+/* ======================================================================
+   SQL (Supabase SQL Editor):
+
+   create table profiles (
+     id uuid primary key references auth.users(id) on delete cascade,
+     nome text, role text default 'user' check (role in ('user','admin')),
+     created_at timestamp default now()
+   );
+
+   create table empresa (
+     id int primary key default 1,
+     nome text, cnpj text, telefone text, email text, endereco text, logo_base64 text
+   );
+
+   create table produtos (
+     id uuid primary key default gen_random_uuid(),
+     nome text unique not null, valor numeric not null, updated_at timestamp default now()
+   );
+
+   create table orcamentos (
+     id uuid primary key default gen_random_uuid(),
+     cliente text, data date, itens jsonb,
+     subtotal numeric, desconto numeric, desconto_tipo text, frete numeric, total numeric,
+     created_by uuid references profiles(id), created_at timestamp default now()
+   );
+
+   -- se a tabela orcamentos já existia antes, rode:
+   -- alter table orcamentos add column if not exists subtotal numeric;
+   -- alter table orcamentos add column if not exists desconto numeric;
+   -- alter table orcamentos add column if not exists desconto_tipo text;
+   -- alter table orcamentos add column if not exists frete numeric;
+   -- alter table empresa add column if not exists logo_base64 text;
+
+   Habilite RLS e crie policies de select/insert para authenticated,
+   e update em "empresa" apenas para role = 'admin'.
+   ====================================================================== */
+
+if (SUPABASE_URL.includes('SEU-PROJETO')) {
+  document.getElementById('configWarning').style.display = 'block';
+}
+
+const state = { accessToken: null, user: null, profile: null, produtos: [], itens: [], empresa: null, logoBase64: null, historico: [] };
+let historicoAtualData = null;
+
+function authHeaders(json = true) {
+  const h = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${state.accessToken || SUPABASE_ANON_KEY}` };
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+function showAlert(elId, msg, type = 'danger') {
+  const el = document.getElementById(elId);
+  el.textContent = msg; el.className = `alert py-2 mt-2 alert-${type}`; el.classList.remove('d-none');
+}
+function hideAlert(elId) { document.getElementById(elId).classList.add('d-none'); }
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function formatDataBR(iso) {
+  if (!iso) return new Date().toLocaleDateString('pt-BR');
+  const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`;
+}
+
+/* ---------------- AUTENTICAÇÃO ---------------- */
+async function login(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || 'Falha no login');
+  state.accessToken = data.access_token; state.user = data.user;
+  await loadProfile();
+}
+async function registerUser(nome, email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password, data: { nome } })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || 'Falha no cadastro');
+  if (data.user) {
+    await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+      method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' },
+      body: JSON.stringify({ id: data.user.id, nome, role: 'user' })
+    });
+  }
+  return data;
+}
+async function loadProfile() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${state.user.id}&select=*`, { headers: authHeaders() });
+  const rows = await res.json();
+  state.profile = rows[0] || { nome: state.user.email, role: 'user' };
+}
+function logout() {
+  state.accessToken = null; state.user = null; state.profile = null;
+  document.getElementById('appScreen').classList.add('app-hidden');
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+/* ---------------- EMPRESA ---------------- */
+async function loadEmpresa() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/empresa?id=eq.1&select=*`, { headers: authHeaders() });
+  const rows = await res.json();
+  const emp = rows[0];
+  state.empresa = emp || null;
+  document.getElementById('empresaNomeNav').textContent = emp?.nome || 'Sistema de Orçamentos';
+  if (emp) {
+    empNome.value = emp.nome || ''; empCnpj.value = emp.cnpj || '';
+    empTelefone.value = emp.telefone || ''; empEmail.value = emp.email || '';
+    empEndereco.value = emp.endereco || '';
+    if (emp.logo_base64) {
+      logoPreviewImg.src = emp.logo_base64; logoPreviewImg.classList.remove('d-none');
+      state.logoBase64 = emp.logo_base64;
+    }
+  }
+  renderPreview();
+}
+async function saveEmpresa() {
+  const body = {
+    id: 1, nome: empNome.value, cnpj: empCnpj.value, telefone: empTelefone.value,
+    email: empEmail.value, endereco: empEndereco.value,
+    logo_base64: state.logoBase64 || (state.empresa ? state.empresa.logo_base64 : null)
+  };
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/empresa`, {
+    method: 'POST', headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('Erro ao salvar dados da empresa');
+  document.getElementById('empresaNomeNav').textContent = body.nome || 'Sistema de Orçamentos';
+  state.empresa = body; renderPreview();
+}
+empLogoInput.addEventListener('change', () => {
+  const file = empLogoInput.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.logoBase64 = reader.result;
+    logoPreviewImg.src = state.logoBase64; logoPreviewImg.classList.remove('d-none');
+  };
+  reader.readAsDataURL(file);
+});
+
+/* ---------------- PRODUTOS ---------------- */
+async function loadProdutos() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/produtos?select=*&order=nome.asc`, { headers: authHeaders() });
+  state.produtos = await res.json();
+  renderProdutosTable();
+}
+async function upsertProduto(nome, valor) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/produtos`, {
+    method: 'POST', headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ nome, valor, updated_at: new Date().toISOString() })
+  });
+  if (!res.ok) throw new Error('Erro ao salvar produto');
+  await loadProdutos();
+}
+async function deleteProduto(id) {
+  await fetch(`${SUPABASE_URL}/rest/v1/produtos?id=eq.${id}`, { method: 'DELETE', headers: authHeaders() });
+  await loadProdutos();
+}
+function renderProdutosTable() {
+  produtosTableBody.innerHTML = state.produtos.map(p => `
+    <tr>
+      <td>${escapeHtml(p.nome)}</td>
+      <td>R$ ${Number(p.valor).toFixed(2)}</td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="deleteProduto('${p.id}')"><i class="bi bi-trash"></i></button></td>
+    </tr>`).join('') || '<tr><td colspan="3" class="text-muted">Nenhum produto cadastrado ainda.</td></tr>';
+}
+itemProdutoInput.addEventListener('input', () => {
+  const term = itemProdutoInput.value.trim().toLowerCase();
+  produtoSugestoes.innerHTML = ''; if (!term) return;
+  state.produtos.filter(p => p.nome.toLowerCase().includes(term)).slice(0, 6).forEach(p => {
+    const item = document.createElement('button');
+    item.type = 'button'; item.className = 'list-group-item list-group-item-action produto-sugestao';
+    item.textContent = `${p.nome} — R$ ${Number(p.valor).toFixed(2)}`;
+    item.onclick = () => { itemProdutoInput.value = p.nome; itemValorInput.value = p.valor; produtoSugestoes.innerHTML = ''; };
+    produtoSugestoes.appendChild(item);
+  });
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#itemProdutoInput') && !e.target.closest('#produtoSugestoes')) produtoSugestoes.innerHTML = '';
+});
+
+/* ---------------- ITENS / CÁLCULOS ---------------- */
+function addItem() {
+  const nome = itemProdutoInput.value.trim();
+  const valor = parseFloat(itemValorInput.value);
+  const qtd = parseInt(itemQtdInput.value) || 1;
+  if (!nome || isNaN(valor)) { showAlert('orcamentoAlert', 'Informe produto e valor válidos.'); return; }
+  hideAlert('orcamentoAlert');
+  state.itens.push({ nome, valor, qtd });
+  itemProdutoInput.value = ''; itemValorInput.value = ''; itemQtdInput.value = 1;
+  renderItens();
+}
+function removeItem(idx) { state.itens.splice(idx, 1); renderItens(); }
+function renderItens() {
+  itensTableBody.innerHTML = state.itens.map((it, i) => `
+    <tr class="item-row">
+      <td>${escapeHtml(it.nome)}</td><td>R$ ${it.valor.toFixed(2)}</td><td>${it.qtd}</td>
+      <td>R$ ${(it.valor * it.qtd).toFixed(2)}</td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="removeItem(${i})"><i class="bi bi-x-lg"></i></button></td>
+    </tr>`).join('');
+  renderPreview();
+}
+function calcTotais() {
+  const subtotal = state.itens.reduce((s, it) => s + it.valor * it.qtd, 0);
+  const descontoInput = parseFloat(orcDescontoValor.value) || 0;
+  const tipo = orcDescontoTipo.value;
+  const descontoValor = tipo === 'percent' ? subtotal * (descontoInput / 100) : descontoInput;
+  const frete = parseFloat(orcFrete.value) || 0;
+  const total = Math.max(subtotal - descontoValor + frete, 0);
+  return { subtotal, descontoValor, descontoInput, tipo, frete, total };
+}
+
+/* ---------------- MONTAGEM DO DOCUMENTO (preview / pdf / histórico) ---------------- */
+function buildDocumentoHTML(d) {
+  const itensHTML = d.itens.length ? d.itens.map(it => `
+    <tr>
+      <td>${escapeHtml(it.nome)}</td>
+      <td class="text-center">${it.qtd}</td>
+      <td class="text-end">R$ ${it.valor.toFixed(2)}</td>
+      <td class="text-end">R$ ${(it.valor * it.qtd).toFixed(2)}</td>
+    </tr>`).join('') : `<tr><td colspan="4" class="text-muted text-center py-4">Nenhum item adicionado ainda</td></tr>`;
+
+  return `
+    <div class="doc-header">
+      <div class="doc-empresa">
+        ${d.logo ? `<img class="doc-logo" src="${d.logo}">` : ''}
+        <div class="doc-empresa-nome">${escapeHtml(d.empresaNome || 'Nome da Empresa')}</div>
+        <div class="doc-empresa-info">${d.empresaInfo || ''}</div>
+      </div>
+      <div class="doc-titulo">
+        <h5>ORÇAMENTO</h5>
+        <div class="doc-data">${d.dataStr}</div>
+      </div>
+    </div>
+    <div class="doc-cliente"><span>Cliente</span><strong>${escapeHtml(d.cliente || '—')}</strong></div>
+    <table class="doc-table">
+      <thead><tr><th>Produto</th><th class="text-center">Qtd</th><th class="text-end">Valor unit.</th><th class="text-end">Subtotal</th></tr></thead>
+      <tbody>${itensHTML}</tbody>
+    </table>
+    <div class="doc-summary">
+      <div class="row-line"><span>Subtotal</span><span>R$ ${d.subtotal.toFixed(2)}</span></div>
+      ${d.descontoValor > 0 ? `<div class="row-line" style="color:#dc2626"><span>Desconto${d.descontoTipo === 'percent' && d.descontoInput ? ` (${d.descontoInput}%)` : ''}</span><span>- R$ ${d.descontoValor.toFixed(2)}</span></div>` : ''}
+      ${d.frete > 0 ? `<div class="row-line"><span>Frete</span><span>R$ ${d.frete.toFixed(2)}</span></div>` : ''}
+      <div class="row-line total"><span>Total</span><span>R$ ${d.total.toFixed(2)}</span></div>
+    </div>
+    <div class="doc-footer-note">Orçamento gerado pelo sistema — sujeito a alteração sem aviso prévio.</div>
+  `;
+}
+function getOrcamentoData() {
+  const t = calcTotais();
+  const emp = state.empresa;
+  const contato = [emp?.telefone, emp?.email].filter(Boolean).join(' · ');
+  const infoParts = [emp?.cnpj ? `CNPJ: ${emp.cnpj}` : null, contato || null, emp?.endereco].filter(Boolean);
+  return {
+    empresaNome: emp?.nome, empresaInfo: infoParts.join('<br>'), logo: emp?.logo_base64 || state.logoBase64,
+    cliente: orcCliente.value, dataStr: formatDataBR(orcData.value),
+    itens: state.itens, ...t
+  };
+}
+function renderPreview() {
+  const d = getOrcamentoData();
+  documentoPreview.innerHTML = buildDocumentoHTML(d);
+  resSubtotal.textContent = `R$ ${d.subtotal.toFixed(2)}`;
+  resDesconto.textContent = `- R$ ${d.descontoValor.toFixed(2)}`;
+  resFrete.textContent = `R$ ${d.frete.toFixed(2)}`;
+  resTotal.textContent = `R$ ${d.total.toFixed(2)}`;
+}
+[orcCliente, orcData, orcDescontoValor, orcDescontoTipo, orcFrete].forEach(el => el.addEventListener('input', renderPreview));
+
+/* ---------------- PDF / COMPARTILHAR (genérico) ---------------- */
+async function gerarCanvas(el) { return await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' }); }
+
+async function baixarPDF(el, nomeBase) {
+  const canvas = await gerarCanvas(el);
+  const imgData = canvas.toDataURL('image/png');
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pw = pdf.internal.pageSize.getWidth();
+  const ih = (canvas.height * pw) / canvas.width;
+  pdf.addImage(imgData, 'PNG', 0, 0, pw, ih);
+  pdf.save(`${nomeBase}.pdf`);
+}
+function resumoTexto(d) {
+  const linhas = [`*Orçamento - ${d.empresaNome || ''}*`, `Cliente: ${d.cliente || '-'}`, `Data: ${d.dataStr}`, ''];
+  d.itens.forEach(it => linhas.push(`- ${it.nome} x${it.qtd} — R$ ${(it.valor * it.qtd).toFixed(2)}`));
+  linhas.push('', `Subtotal: R$ ${d.subtotal.toFixed(2)}`);
+  if (d.descontoValor > 0) linhas.push(`Desconto: R$ ${d.descontoValor.toFixed(2)}`);
+  if (d.frete > 0) linhas.push(`Frete: R$ ${d.frete.toFixed(2)}`);
+  linhas.push(`Total: R$ ${d.total.toFixed(2)}`);
+  return linhas.join('\n');
+}
+function abrirFallbackCompartilhar(texto) {
+  shareWhatsappLink.href = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+  shareGmailLink.href = `mailto:?subject=${encodeURIComponent('Orçamento')}&body=${encodeURIComponent(texto)}`;
+  new bootstrap.Modal(document.getElementById('shareModal')).show();
+}
+async function compartilhar(el, d, nomeBase) {
+  const texto = resumoTexto(d);
+  try {
+    const canvas = await gerarCanvas(el);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    const file = new File([blob], `${nomeBase}.png`, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Orçamento', text: texto });
+      return;
+    }
+  } catch (e) { /* segue para o fallback */ }
+  abrirFallbackCompartilhar(texto);
+}
+
+/* ---------------- SALVAR ORÇAMENTO ---------------- */
+async function saveOrcamento() {
+  if (state.itens.length === 0) { showAlert('orcamentoAlert', 'Adicione ao menos um item.'); return; }
+  const d = getOrcamentoData();
+  const body = {
+    cliente: orcCliente.value || 'Não informado', data: orcData.value || new Date().toISOString().slice(0, 10),
+    itens: state.itens, subtotal: d.subtotal, desconto: d.descontoValor, desconto_tipo: d.descontoTipo,
+    frete: d.frete, total: d.total, created_by: state.user.id
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos`, {
+      method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('Erro ao salvar orçamento');
+    for (const it of state.itens) await upsertProduto(it.nome, it.valor);
+    showAlert('orcamentoAlert', 'Orçamento salvo com sucesso!', 'success');
+    state.itens = []; orcCliente.value = ''; orcDescontoValor.value = ''; orcFrete.value = '';
+    renderItens();
+  } catch (err) { showAlert('orcamentoAlert', err.message); }
+}
+
+/* ---------------- HISTÓRICO ---------------- */
+async function loadHistorico() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos?select=*&order=created_at.desc`, { headers: authHeaders() });
+  state.historico = await res.json();
+  historicoList.innerHTML = state.historico.map((o, i) => `
+    <div class="historico-item">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <strong>${escapeHtml(o.cliente)}</strong>
+          <div class="small text-muted">${formatDataBR(o.data)} • ${(o.itens || []).length} item(ns)</div>
+        </div>
+        <div class="text-end">
+          <div class="fw-bold" style="color:var(--brand-dark)">R$ ${Number(o.total ?? 0).toFixed(2)}</div>
+          <button class="btn btn-sm btn-outline-primary mt-1" onclick="abrirHistorico(${i})"><i class="bi bi-eye"></i> Abrir</button>
+        </div>
+      </div>
+    </div>`).join('') || '<p class="text-muted">Nenhum orçamento salvo ainda.</p>';
+}
+function abrirHistorico(i) {
+  const row = state.historico[i];
+  const emp = state.empresa;
+  const contato = [emp?.telefone, emp?.email].filter(Boolean).join(' · ');
+  const infoParts = [emp?.cnpj ? `CNPJ: ${emp.cnpj}` : null, contato || null, emp?.endereco].filter(Boolean);
+  const subtotal = row.subtotal ?? (row.itens || []).reduce((s, it) => s + it.valor * it.qtd, 0);
+  historicoAtualData = {
+    empresaNome: emp?.nome, empresaInfo: infoParts.join('<br>'), logo: emp?.logo_base64,
+    cliente: row.cliente, dataStr: formatDataBR(row.data), itens: row.itens || [],
+    subtotal, descontoValor: row.desconto || 0, descontoInput: null, descontoTipo: row.desconto_tipo,
+    frete: row.frete || 0, total: row.total ?? subtotal
+  };
+  historicoDocPreview.innerHTML = buildDocumentoHTML(historicoAtualData);
+  new bootstrap.Modal(document.getElementById('historicoModal')).show();
+}
+historicoBaixarBtn.addEventListener('click', () => {
+  if (!historicoAtualData) return;
+  baixarPDF(historicoDocPreview, `orcamento_${(historicoAtualData.cliente || 'cliente').replace(/\s+/g, '_')}`);
+});
+historicoCompartilharBtn.addEventListener('click', () => {
+  if (!historicoAtualData) return;
+  compartilhar(historicoDocPreview, historicoAtualData, `orcamento_${(historicoAtualData.cliente || 'cliente').replace(/\s+/g, '_')}`);
+});
+
+/* ---------------- NAVEGAÇÃO ENTRE ABAS ---------------- */
+document.querySelectorAll('#mainTabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#mainTabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('d-none'));
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('d-none');
+    if (btn.dataset.tab === 'historico') loadHistorico();
+    if (btn.dataset.tab === 'produtos') loadProdutos();
+    if (btn.dataset.tab === 'empresa') loadEmpresa();
+  });
+});
+
+/* ---------------- ENTRAR NO APP ---------------- */
+async function enterApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').classList.remove('app-hidden');
+  userEmailLabel.textContent = state.user.email;
+  const isAdmin = state.profile?.role === 'admin';
+  roleBadge.textContent = isAdmin ? 'ADMIN' : 'USUÁRIO';
+  roleBadge.className = 'badge ' + (isAdmin ? 'badge-admin' : 'badge-user');
+  document.getElementById('empresaTabItem').classList.toggle('d-none', !isAdmin);
+  orcData.value = new Date().toISOString().slice(0, 10);
+  await loadEmpresa();
+  await loadProdutos();
+}
+
+/* ---------------- EVENTOS ---------------- */
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); hideAlert('loginAlert');
+  loginBtn.disabled = true; loginBtn.textContent = 'Entrando...';
+  try { await login(loginEmail.value, loginPassword.value); await enterApp(); }
+  catch (err) { showAlert('loginAlert', err.message); }
+  finally { loginBtn.disabled = false; loginBtn.textContent = 'Entrar'; }
+});
+showRegisterBtn.addEventListener('click', () => {
+  loginForm.classList.add('d-none'); showRegisterBtn.classList.add('d-none');
+  registerForm.classList.remove('d-none'); registerForm.classList.add('d-flex');
+  loginSubtitle.textContent = 'Crie sua conta';
+});
+backToLoginBtn.addEventListener('click', () => {
+  registerForm.classList.add('d-none'); registerForm.classList.remove('d-flex');
+  loginForm.classList.remove('d-none'); showRegisterBtn.classList.remove('d-none');
+  loginSubtitle.textContent = 'Entre com sua conta';
+});
+registerForm.addEventListener('submit', async (e) => {
+  e.preventDefault(); hideAlert('registerAlert');
+  try {
+    await registerUser(regNome.value, regEmail.value, regPassword.value);
+    showAlert('registerAlert', 'Conta criada! Se a confirmação por e-mail estiver ativa, confirme antes de entrar.', 'success');
+  } catch (err) { showAlert('registerAlert', err.message); }
+});
+logoutBtn.addEventListener('click', logout);
+addItemBtn.addEventListener('click', addItem);
+saveOrcamentoBtn.addEventListener('click', saveOrcamento);
+refreshHistBtn.addEventListener('click', loadHistorico);
+downloadPdfBtn.addEventListener('click', () => baixarPDF(documentoPreview, `orcamento_${(orcCliente.value || 'cliente').replace(/\s+/g, '_')}`));
+shareBtn.addEventListener('click', () => compartilhar(documentoPreview, getOrcamentoData(), `orcamento_${(orcCliente.value || 'cliente').replace(/\s+/g, '_')}`));
+saveProdutoBtn.addEventListener('click', async () => {
+  const nome = prodNomeInput.value.trim();
+  const valor = parseFloat(prodValorInput.value);
+  if (!nome || isNaN(valor)) { showAlert('produtoAlert', 'Preencha nome e valor.'); return; }
+  try { await upsertProduto(nome, valor); showAlert('produtoAlert', 'Produto salvo!', 'success'); prodNomeInput.value = ''; prodValorInput.value = ''; }
+  catch (err) { showAlert('produtoAlert', err.message); }
+});
+saveEmpresaBtn.addEventListener('click', async () => {
+  try { await saveEmpresa(); showAlert('empresaAlert', 'Dados da empresa atualizados!', 'success'); }
+  catch (err) { showAlert('empresaAlert', err.message); }
+});
+
+renderPreview();
+</script>
+</body>
+</html>
