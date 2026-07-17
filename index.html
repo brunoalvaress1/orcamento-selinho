@@ -141,14 +141,32 @@
         <div class="col-lg-7">
           <div class="card p-4 mb-3">
             <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label small">Cliente</label>
-                <input type="text" class="form-control" id="orcCliente" placeholder="Nome do cliente">
+              <div class="col-md-4 position-relative">
+                <label class="form-label small">Cliente (nome/razão social)</label>
+                <input type="text" class="form-control" id="orcClienteNome" placeholder="Nome do cliente" autocomplete="off">
+                <div id="clienteSugestoes" class="list-group position-absolute w-100" style="z-index:20;"></div>
               </div>
-              <div class="col-md-6">
+              <div class="col-md-4">
+                <label class="form-label small">CNPJ/CPF</label>
+                <input type="text" class="form-control" id="orcClienteCnpj" placeholder="00.000.000/0000-00">
+              </div>
+              <div class="col-md-4">
                 <label class="form-label small">Data</label>
                 <input type="date" class="form-control" id="orcData">
               </div>
+              <div class="col-md-4">
+                <label class="form-label small">Telefone</label>
+                <input type="text" class="form-control" id="orcClienteTelefone" placeholder="(00) 00000-0000">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">E-mail</label>
+                <input type="email" class="form-control" id="orcClienteEmail" placeholder="cliente@empresa.com">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">Endereço</label>
+                <input type="text" class="form-control" id="orcClienteEndereco" placeholder="Rua, número, bairro, cidade">
+              </div>
+              
             </div>
           </div>
 
@@ -368,6 +386,16 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
      nome text unique not null, valor numeric not null, updated_at timestamp default now()
    );
 
+   create table clientes (
+     id uuid primary key default gen_random_uuid(),
+     nome text not null,
+     cnpj text unique,
+     telefone text,
+     email text,
+     endereco text,
+     updated_at timestamp default now()
+   );
+
    create table orcamentos (
      id uuid primary key default gen_random_uuid(),
      cliente text, data date, itens jsonb,
@@ -390,7 +418,7 @@ if (SUPABASE_URL.includes('SEU-PROJETO')) {
   document.getElementById('configWarning').style.display = 'block';
 }
 
-const state = { accessToken: null, user: null, profile: null, produtos: [], itens: [], empresa: null, logoBase64: null, historico: [] };
+const state = { accessToken: null, user: null, profile: null, produtos: [], clientes: [], itens: [], empresa: null, logoBase64: null, historico: [] };
 let historicoAtualData = null;
 
 function authHeaders(json = true) {
@@ -494,11 +522,14 @@ async function loadProdutos() {
   renderProdutosTable();
 }
 async function upsertProduto(nome, valor) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/produtos`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/produtos?on_conflict=nome`, {
     method: 'POST', headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({ nome, valor, updated_at: new Date().toISOString() })
   });
-  if (!res.ok) throw new Error('Erro ao salvar produto');
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Erro ao salvar produto: ${errText || res.status}`);
+  }
   await loadProdutos();
 }
 async function deleteProduto(id) {
@@ -526,6 +557,74 @@ itemProdutoInput.addEventListener('input', () => {
 });
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#itemProdutoInput') && !e.target.closest('#produtoSugestoes')) produtoSugestoes.innerHTML = '';
+  if (!e.target.closest('#orcClienteNome') && !e.target.closest('#clienteSugestoes')) clienteSugestoes.innerHTML = '';
+});
+
+/* ---------------- CLIENTES ---------------- */
+async function loadClientes() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/clientes?select=*&order=nome.asc`, { headers: authHeaders() });
+  if (!res.ok) {
+    state.clientes = [];
+    return;
+  }
+  state.clientes = await res.json();
+}
+async function upsertCliente(cliente) {
+  const payload = {
+    nome: cliente.nome || 'Não informado',
+    cnpj: cliente.cnpj || null,
+    telefone: cliente.telefone || null,
+    email: cliente.email || null,
+    endereco: cliente.endereco || null,
+    updated_at: new Date().toISOString()
+  };
+
+  const hasCnpj = !!(payload.cnpj && payload.cnpj.trim());
+  const url = hasCnpj
+    ? `${SUPABASE_URL}/rest/v1/clientes?on_conflict=cnpj`
+    : `${SUPABASE_URL}/rest/v1/clientes`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Erro ao salvar cliente: ${errText || res.status}`);
+  }
+  await loadClientes();
+}
+
+orcClienteNome.addEventListener('input', () => {
+  const term = orcClienteNome.value.trim().toLowerCase();
+  clienteSugestoes.innerHTML = '';
+  if (!term) return;
+
+  state.clientes
+    .filter(c =>
+      (c.nome || '').toLowerCase().includes(term) ||
+      (c.cnpj || '').toLowerCase().includes(term) ||
+      (c.telefone || '').toLowerCase().includes(term)
+    )
+    .slice(0, 6)
+    .forEach(c => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'list-group-item list-group-item-action produto-sugestao';
+      item.textContent = `${c.nome}${c.cnpj ? ` — ${c.cnpj}` : ''}`;
+      item.onclick = () => {
+        orcClienteNome.value = c.nome || '';
+        orcClienteCnpj.value = c.cnpj || '';
+        orcClienteTelefone.value = c.telefone || '';
+        orcClienteEmail.value = c.email || '';
+        orcClienteEndereco.value = c.endereco || '';
+        clienteSugestoes.innerHTML = '';
+        renderPreview();
+      };
+      clienteSugestoes.appendChild(item);
+    });
 });
 
 /* ---------------- ITENS / CÁLCULOS ---------------- */
@@ -581,7 +680,15 @@ function buildDocumentoHTML(d) {
         <div class="doc-data">${d.dataStr}</div>
       </div>
     </div>
-    <div class="doc-cliente"><span>Cliente</span><strong>${escapeHtml(d.cliente || '—')}</strong></div>
+    <div class="doc-cliente">
+      <div>
+        <span>Cliente</span>
+        <strong>${escapeHtml(d.cliente || '—')}</strong>
+      </div>
+      <div class="text-end small text-muted">
+        ${d.clienteDoc || ''}
+      </div>
+    </div>
     <table class="doc-table">
       <thead><tr><th>Produto</th><th class="text-center">Qtd</th><th class="text-end">Valor unit.</th><th class="text-end">Subtotal</th></tr></thead>
       <tbody>${itensHTML}</tbody>
@@ -602,7 +709,14 @@ function getOrcamentoData() {
   const infoParts = [emp?.cnpj ? `CNPJ: ${emp.cnpj}` : null, contato || null, emp?.endereco].filter(Boolean);
   return {
     empresaNome: emp?.nome, empresaInfo: infoParts.join('<br>'), logo: emp?.logo_base64 || state.logoBase64,
-    cliente: orcCliente.value, dataStr: formatDataBR(orcData.value),
+    cliente: orcClienteNome.value,
+    clienteDoc: [
+      orcClienteCnpj.value ? `CNPJ/CPF: ${escapeHtml(orcClienteCnpj.value)}` : '',
+      orcClienteTelefone.value ? `Tel: ${escapeHtml(orcClienteTelefone.value)}` : '',
+      orcClienteEmail.value ? `E-mail: ${escapeHtml(orcClienteEmail.value)}` : '',
+      orcClienteEndereco.value ? `Endereço: ${escapeHtml(orcClienteEndereco.value)}` : ''
+    ].filter(Boolean).join('<br>'),
+    dataStr: formatDataBR(orcData.value),
     itens: state.itens, ...t
   };
 }
@@ -614,7 +728,7 @@ function renderPreview() {
   resFrete.textContent = `R$ ${d.frete.toFixed(2)}`;
   resTotal.textContent = `R$ ${d.total.toFixed(2)}`;
 }
-[orcCliente, orcData, orcDescontoValor, orcDescontoTipo, orcFrete].forEach(el => el.addEventListener('input', renderPreview));
+[orcClienteNome, orcClienteCnpj, orcClienteTelefone, orcClienteEmail, orcClienteEndereco, orcData, orcDescontoValor, orcDescontoTipo, orcFrete].forEach(el => el.addEventListener('input', renderPreview));
 
 /* ---------------- PDF / COMPARTILHAR (genérico) ---------------- */
 async function gerarCanvas(el) { return await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' }); }
@@ -661,19 +775,37 @@ async function compartilhar(el, d, nomeBase) {
 async function saveOrcamento() {
   if (state.itens.length === 0) { showAlert('orcamentoAlert', 'Adicione ao menos um item.'); return; }
   const d = getOrcamentoData();
+  const clientePayload = {
+    nome: orcClienteNome.value || 'Não informado',
+    cnpj: orcClienteCnpj.value || '',
+    telefone: orcClienteTelefone.value || '',
+    email: orcClienteEmail.value || '',
+    endereco: orcClienteEndereco.value || ''
+  };
+
   const body = {
-    cliente: orcCliente.value || 'Não informado', data: orcData.value || new Date().toISOString().slice(0, 10),
+    cliente: clientePayload.nome,
+    cliente_detalhes: clientePayload,
+    data: orcData.value || new Date().toISOString().slice(0, 10),
     itens: state.itens, subtotal: d.subtotal, desconto: d.descontoValor, desconto_tipo: d.descontoTipo,
     frete: d.frete, total: d.total, created_by: state.user.id
   };
   try {
+    await upsertCliente(clientePayload);
     const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos`, {
       method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify(body)
     });
     if (!res.ok) throw new Error('Erro ao salvar orçamento');
     for (const it of state.itens) await upsertProduto(it.nome, it.valor);
     showAlert('orcamentoAlert', 'Orçamento salvo com sucesso!', 'success');
-    state.itens = []; orcCliente.value = ''; orcDescontoValor.value = ''; orcFrete.value = '';
+    state.itens = [];
+    orcClienteNome.value = '';
+    orcClienteCnpj.value = '';
+    orcClienteTelefone.value = '';
+    orcClienteEmail.value = '';
+    orcClienteEndereco.value = '';
+    orcDescontoValor.value = '';
+    orcFrete.value = '';
     renderItens();
   } catch (err) { showAlert('orcamentoAlert', err.message); }
 }
@@ -702,9 +834,17 @@ function abrirHistorico(i) {
   const contato = [emp?.telefone, emp?.email].filter(Boolean).join(' · ');
   const infoParts = [emp?.cnpj ? `CNPJ: ${emp.cnpj}` : null, contato || null, emp?.endereco].filter(Boolean);
   const subtotal = row.subtotal ?? (row.itens || []).reduce((s, it) => s + it.valor * it.qtd, 0);
+  const cli = row.cliente_detalhes || {};
   historicoAtualData = {
     empresaNome: emp?.nome, empresaInfo: infoParts.join('<br>'), logo: emp?.logo_base64,
-    cliente: row.cliente, dataStr: formatDataBR(row.data), itens: row.itens || [],
+    cliente: cli.nome || row.cliente,
+    clienteDoc: [
+      cli.cnpj ? `CNPJ/CPF: ${escapeHtml(cli.cnpj)}` : '',
+      cli.telefone ? `Tel: ${escapeHtml(cli.telefone)}` : '',
+      cli.email ? `E-mail: ${escapeHtml(cli.email)}` : '',
+      cli.endereco ? `Endereço: ${escapeHtml(cli.endereco)}` : ''
+    ].filter(Boolean).join('<br>'),
+    dataStr: formatDataBR(row.data), itens: row.itens || [],
     subtotal, descontoValor: row.desconto || 0, descontoInput: null, descontoTipo: row.desconto_tipo,
     frete: row.frete || 0, total: row.total ?? subtotal
   };
@@ -745,6 +885,7 @@ async function enterApp() {
   orcData.value = new Date().toISOString().slice(0, 10);
   await loadEmpresa();
   await loadProdutos();
+  await loadClientes();
 }
 
 /* ---------------- EVENTOS ---------------- */
@@ -776,8 +917,8 @@ logoutBtn.addEventListener('click', logout);
 addItemBtn.addEventListener('click', addItem);
 saveOrcamentoBtn.addEventListener('click', saveOrcamento);
 refreshHistBtn.addEventListener('click', loadHistorico);
-downloadPdfBtn.addEventListener('click', () => baixarPDF(documentoPreview, `orcamento_${(orcCliente.value || 'cliente').replace(/\s+/g, '_')}`));
-shareBtn.addEventListener('click', () => compartilhar(documentoPreview, getOrcamentoData(), `orcamento_${(orcCliente.value || 'cliente').replace(/\s+/g, '_')}`));
+downloadPdfBtn.addEventListener('click', () => baixarPDF(documentoPreview, `orcamento_${(orcClienteNome.value || 'cliente').replace(/\s+/g, '_')}`));
+shareBtn.addEventListener('click', () => compartilhar(documentoPreview, getOrcamentoData(), `orcamento_${(orcClienteNome.value || 'cliente').replace(/\s+/g, '_')}`));
 saveProdutoBtn.addEventListener('click', async () => {
   const nome = prodNomeInput.value.trim();
   const valor = parseFloat(prodValorInput.value);
