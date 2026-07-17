@@ -166,6 +166,10 @@
                 <label class="form-label small">Endereço</label>
                 <input type="text" class="form-control" id="orcClienteEndereco" placeholder="Rua, número, bairro, cidade">
               </div>
+              <div class="col-md-4">
+                <label class="form-label small">Vendedor</label>
+                <input type="text" class="form-control" id="orcVendedorNome" placeholder="Nome do vendedor">
+              </div>
               
             </div>
           </div>
@@ -246,9 +250,12 @@
     <!-- ---- ABA HISTÓRICO ---- -->
     <div class="tab-pane d-none" id="tab-historico">
       <div class="card p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
           <h6 class="fw-bold mb-0">Orçamentos salvos</h6>
-          <button class="btn btn-sm btn-outline-secondary" id="refreshHistBtn"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
+          <div class="d-flex align-items-center gap-2">
+            <input type="text" class="form-control form-control-sm" id="histClienteFiltro" placeholder="Filtrar por cliente..." style="min-width:220px;">
+            <button class="btn btn-sm btn-outline-secondary" id="refreshHistBtn"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
+          </div>
         </div>
         <div id="historicoList"></div>
       </div>
@@ -719,7 +726,8 @@ function getOrcamentoData() {
       orcClienteCnpj.value ? `CNPJ/CPF: ${escapeHtml(orcClienteCnpj.value)}` : '',
       orcClienteTelefone.value ? `Tel: ${escapeHtml(orcClienteTelefone.value)}` : '',
       orcClienteEmail.value ? `E-mail: ${escapeHtml(orcClienteEmail.value)}` : '',
-      orcClienteEndereco.value ? `Endereço: ${escapeHtml(orcClienteEndereco.value)}` : ''
+      orcClienteEndereco.value ? `Endereço: ${escapeHtml(orcClienteEndereco.value)}` : '',
+      orcVendedorNome.value ? `Vendedor: ${escapeHtml(orcVendedorNome.value)}` : ''
     ].filter(Boolean).join('<br>'),
     dataStr: formatDataBR(orcData.value),
     itens: state.itens, ...t
@@ -733,7 +741,7 @@ function renderPreview() {
   resFrete.textContent = `R$ ${d.frete.toFixed(2)}`;
   resTotal.textContent = `R$ ${d.total.toFixed(2)}`;
 }
-[orcClienteNome, orcClienteCnpj, orcClienteTelefone, orcClienteEmail, orcClienteEndereco, orcData, orcDescontoValor, orcDescontoTipo, orcFrete].forEach(el => el.addEventListener('input', renderPreview));
+[orcClienteNome, orcClienteCnpj, orcClienteTelefone, orcClienteEmail, orcClienteEndereco, orcVendedorNome, orcData, orcDescontoValor, orcDescontoTipo, orcFrete].forEach(el => el.addEventListener('input', renderPreview));
 
 /* ---------------- PDF / COMPARTILHAR (genérico) ---------------- */
 async function gerarCanvas(el) { return await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' }); }
@@ -790,11 +798,16 @@ async function saveOrcamento() {
 
   const baseBody = {
     cliente: clientePayload.nome,
+    vendedor: orcVendedorNome.value || null,
     data: orcData.value || new Date().toISOString().slice(0, 10),
     itens: state.itens, subtotal: d.subtotal, desconto: d.descontoValor, desconto_tipo: d.descontoTipo,
     frete: d.frete, total: d.total, created_by: state.user.id
   };
-  const bodyComClienteDetalhes = { ...baseBody, cliente_detalhes: clientePayload };
+  const bodyComClienteDetalhes = {
+    ...baseBody,
+    vendedor: orcVendedorNome.value || null,
+    cliente_detalhes: { ...clientePayload, vendedor: orcVendedorNome.value || '' }
+  };
   try {
     if (!SUPABASE_ANON_KEY) throw new Error('Chave ANON ausente. Configure SUPABASE_ANON_KEY.');
     await upsertCliente(clientePayload);
@@ -829,6 +842,7 @@ async function saveOrcamento() {
     orcClienteTelefone.value = '';
     orcClienteEmail.value = '';
     orcClienteEndereco.value = '';
+    orcVendedorNome.value = '';
     orcDescontoValor.value = '';
     orcFrete.value = '';
     renderItens();
@@ -839,22 +853,42 @@ async function saveOrcamento() {
 async function loadHistorico() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos?select=*&order=created_at.desc`, { headers: authHeaders() });
   state.historico = await res.json();
-  historicoList.innerHTML = state.historico.map((o, i) => `
+  renderHistoricoList();
+}
+function renderHistoricoList() {
+  const filtro = (histClienteFiltro?.value || '').trim().toLowerCase();
+  const rows = state.historico.filter(o => (o.cliente || '').toLowerCase().includes(filtro));
+  historicoList.innerHTML = rows.map((o) => `
     <div class="historico-item">
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <strong>${escapeHtml(o.cliente)}</strong>
           <div class="small text-muted">${formatDataBR(o.data)} • ${(o.itens || []).length} item(ns)</div>
         </div>
-        <div class="text-end">
+        <div class="text-end d-flex flex-column gap-1">
           <div class="fw-bold" style="color:var(--brand-dark)">R$ ${Number(o.total ?? 0).toFixed(2)}</div>
-          <button class="btn btn-sm btn-outline-primary mt-1" onclick="abrirHistorico(${i})"><i class="bi bi-eye"></i> Abrir</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="abrirHistoricoById('${o.id}')"><i class="bi bi-eye"></i> Abrir</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteOrcamento('${o.id}')"><i class="bi bi-trash"></i> Excluir</button>
         </div>
       </div>
-    </div>`).join('') || '<p class="text-muted">Nenhum orçamento salvo ainda.</p>';
+    </div>`).join('') || '<p class="text-muted">Nenhum orçamento encontrado.</p>';
 }
-function abrirHistorico(i) {
-  const row = state.historico[i];
+async function deleteOrcamento(id) {
+  if (!confirm('Deseja realmente excluir este orçamento?')) return;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders(), Prefer: 'return=minimal' }
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    alert(`Erro ao excluir orçamento: ${errText || res.status}`);
+    return;
+  }
+  await loadHistorico();
+}
+function abrirHistoricoById(id) {
+  const row = state.historico.find(h => h.id === id);
+  if (!row) return;
   const emp = state.empresa;
   const contato = [emp?.telefone, emp?.email].filter(Boolean).join(' · ');
   const infoParts = [emp?.cnpj ? `CNPJ: ${emp.cnpj}` : null, contato || null, emp?.endereco].filter(Boolean);
@@ -867,7 +901,8 @@ function abrirHistorico(i) {
       cli.cnpj ? `CNPJ/CPF: ${escapeHtml(cli.cnpj)}` : '',
       cli.telefone ? `Tel: ${escapeHtml(cli.telefone)}` : '',
       cli.email ? `E-mail: ${escapeHtml(cli.email)}` : '',
-      cli.endereco ? `Endereço: ${escapeHtml(cli.endereco)}` : ''
+      cli.endereco ? `Endereço: ${escapeHtml(cli.endereco)}` : '',
+      (cli.vendedor || row.vendedor) ? `Vendedor: ${escapeHtml(cli.vendedor || row.vendedor)}` : ''
     ].filter(Boolean).join('<br>'),
     dataStr: formatDataBR(row.data), itens: row.itens || [],
     subtotal, descontoValor: row.desconto || 0, descontoInput: null, descontoTipo: row.desconto_tipo,
@@ -942,6 +977,7 @@ logoutBtn.addEventListener('click', logout);
 addItemBtn.addEventListener('click', addItem);
 saveOrcamentoBtn.addEventListener('click', saveOrcamento);
 refreshHistBtn.addEventListener('click', loadHistorico);
+histClienteFiltro.addEventListener('input', renderHistoricoList);
 downloadPdfBtn.addEventListener('click', () => baixarPDF(documentoPreview, `orcamento_${(orcClienteNome.value || 'cliente').replace(/\s+/g, '_')}`));
 shareBtn.addEventListener('click', () => compartilhar(documentoPreview, getOrcamentoData(), `orcamento_${(orcClienteNome.value || 'cliente').replace(/\s+/g, '_')}`));
 saveProdutoBtn.addEventListener('click', async () => {
