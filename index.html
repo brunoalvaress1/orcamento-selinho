@@ -365,7 +365,7 @@
    CONFIGURAÇÃO — troque pelos dados do SEU projeto Supabase
    ====================================================================== */
 const SUPABASE_URL = 'https://efwqxwdyclwqwavvlqpc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmd3F4d2R5Y2x3cXdhdnZscXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTY3MzIsImV4cCI6MjA5OTc5MjczMn0.FZFrlOsEotmobX4Sku88RMbGxPk_k2lO_ZalfiusZAs';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmd3F4d2R5Y2x3cXdhdnZscXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTY3MzIsImV4cCI6MjA5OTc5MjczMn0.FZFrlOsEotmobX4Sku88RMbGxPk_k2lO_ZalfiusZAs'.trim();
 
 /* ======================================================================
    SQL (Supabase SQL Editor):
@@ -414,7 +414,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
    e update em "empresa" apenas para role = 'admin'.
    ====================================================================== */
 
-if (SUPABASE_URL.includes('SEU-PROJETO')) {
+if (SUPABASE_URL.includes('SEU-PROJETO') || !SUPABASE_ANON_KEY) {
   document.getElementById('configWarning').style.display = 'block';
 }
 
@@ -422,7 +422,12 @@ const state = { accessToken: null, user: null, profile: null, produtos: [], clie
 let historicoAtualData = null;
 
 function authHeaders(json = true) {
-  const h = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${state.accessToken || SUPABASE_ANON_KEY}` };
+  const apiKey = (SUPABASE_ANON_KEY || '').trim();
+  const bearer = (state.accessToken || apiKey || '').trim();
+  const h = {
+    apikey: apiKey,
+    Authorization: `Bearer ${bearer}`
+  };
   if (json) h['Content-Type'] = 'application/json';
   return h;
 }
@@ -791,11 +796,15 @@ async function saveOrcamento() {
     frete: d.frete, total: d.total, created_by: state.user.id
   };
   try {
+    if (!SUPABASE_ANON_KEY) throw new Error('Chave ANON ausente. Configure SUPABASE_ANON_KEY.');
     await upsertCliente(clientePayload);
     const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos`, {
       method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error('Erro ao salvar orçamento');
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Erro ao salvar orçamento: ${errText || res.status}`);
+    }
     for (const it of state.itens) await upsertProduto(it.nome, it.valor);
     showAlert('orcamentoAlert', 'Orçamento salvo com sucesso!', 'success');
     state.itens = [];
