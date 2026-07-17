@@ -168,7 +168,7 @@
               </div>
               <div class="col-md-4">
                 <label class="form-label small">Solicitante</label>
-                <input type="text" class="form-control" id="orcVendedorNome" placeholder="Nome do vendedor">
+                <input type="text" class="form-control" id="orcVendedorNome" placeholder="Nome do solicitante">
               </div>
               
             </div>
@@ -727,7 +727,7 @@ function getOrcamentoData() {
       orcClienteTelefone.value ? `Tel: ${escapeHtml(orcClienteTelefone.value)}` : '',
       orcClienteEmail.value ? `E-mail: ${escapeHtml(orcClienteEmail.value)}` : '',
       orcClienteEndereco.value ? `Endereço: ${escapeHtml(orcClienteEndereco.value)}` : '',
-      orcVendedorNome.value ? `Vendedor: ${escapeHtml(orcVendedorNome.value)}` : ''
+      orcVendedorNome.value ? `Solicitante: ${escapeHtml(orcVendedorNome.value)}` : ''
     ].filter(Boolean).join('<br>'),
     dataStr: formatDataBR(orcData.value),
     itens: state.itens, ...t
@@ -902,7 +902,7 @@ function abrirHistoricoById(id) {
       cli.telefone ? `Tel: ${escapeHtml(cli.telefone)}` : '',
       cli.email ? `E-mail: ${escapeHtml(cli.email)}` : '',
       cli.endereco ? `Endereço: ${escapeHtml(cli.endereco)}` : '',
-      (cli.vendedor || row.vendedor) ? `Vendedor: ${escapeHtml(cli.vendedor || row.vendedor)}` : ''
+      (cli.vendedor || row.vendedor) ? `Solicitante: ${escapeHtml(cli.vendedor || row.vendedor)}` : ''
     ].filter(Boolean).join('<br>'),
     dataStr: formatDataBR(row.data), itens: row.itens || [],
     subtotal, descontoValor: row.desconto || 0, descontoInput: null, descontoTipo: row.desconto_tipo,
