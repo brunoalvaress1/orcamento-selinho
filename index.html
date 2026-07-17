@@ -788,22 +788,38 @@ async function saveOrcamento() {
     endereco: orcClienteEndereco.value || ''
   };
 
-  const body = {
+  const baseBody = {
     cliente: clientePayload.nome,
-    cliente_detalhes: clientePayload,
     data: orcData.value || new Date().toISOString().slice(0, 10),
     itens: state.itens, subtotal: d.subtotal, desconto: d.descontoValor, desconto_tipo: d.descontoTipo,
     frete: d.frete, total: d.total, created_by: state.user.id
   };
+  const bodyComClienteDetalhes = { ...baseBody, cliente_detalhes: clientePayload };
   try {
     if (!SUPABASE_ANON_KEY) throw new Error('Chave ANON ausente. Configure SUPABASE_ANON_KEY.');
     await upsertCliente(clientePayload);
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos`, {
-      method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify(body)
+
+    let res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos`, {
+      method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify(bodyComClienteDetalhes)
     });
+
     if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Erro ao salvar orçamento: ${errText || res.status}`);
+      const primeiroErro = await res.text();
+      const possivelColunaInexistente =
+        primeiroErro.includes('cliente_detalhes') ||
+        primeiroErro.includes('column') ||
+        primeiroErro.includes('schema cache');
+      if (possivelColunaInexistente) {
+        res = await fetch(`${SUPABASE_URL}/rest/v1/orcamentos`, {
+          method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify(baseBody)
+        });
+        if (!res.ok) {
+          const errText2 = await res.text();
+          throw new Error(`Erro ao salvar orçamento: ${errText2 || res.status}`);
+        }
+      } else {
+        throw new Error(`Erro ao salvar orçamento: ${primeiroErro || res.status}`);
+      }
     }
     for (const it of state.itens) await upsertProduto(it.nome, it.valor);
     showAlert('orcamentoAlert', 'Orçamento salvo com sucesso!', 'success');
