@@ -516,9 +516,24 @@ function formatTelefoneBR(v) {
 }
 function parseMoedaBR(v) {
   if (v == null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+
   const s = String(v).trim();
   if (!s) return 0;
-  const normalizado = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+
+  const temVirgula = s.includes(',');
+  const temPonto = s.includes('.');
+
+  let normalizado = s.replace(/[^\d,.-]/g, '');
+
+  if (temVirgula && temPonto) {
+    normalizado = normalizado.replace(/\./g, '').replace(',', '.');
+  } else if (temVirgula) {
+    normalizado = normalizado.replace(',', '.');
+  } else {
+    normalizado = normalizado;
+  }
+
   const n = parseFloat(normalizado);
   return Number.isFinite(n) ? n : 0;
 }
@@ -672,7 +687,7 @@ function renderProdutosTable() {
   produtosTableBody.innerHTML = state.produtos.map(p => `
     <tr>
       <td>${escapeHtml(p.nome)}</td>
-      <td>R$ ${Number(p.valor).toFixed(2)}</td>
+      <td>R$ ${formatMoedaBR(parseMoedaBR(p.valor))}</td>
       <td class="d-flex gap-1 justify-content-end">
         <button class="btn btn-sm btn-outline-primary" onclick="editarProduto('${p.id}')"><i class="bi bi-pencil"></i></button>
         <button class="btn btn-sm btn-outline-danger" onclick="deleteProduto('${p.id}')"><i class="bi bi-trash"></i></button>
@@ -685,8 +700,8 @@ itemProdutoInput.addEventListener('input', () => {
   state.produtos.filter(p => p.nome.toLowerCase().includes(term)).slice(0, 6).forEach(p => {
     const item = document.createElement('button');
     item.type = 'button'; item.className = 'list-group-item list-group-item-action produto-sugestao';
-    item.textContent = `${p.nome} — R$ ${Number(p.valor).toFixed(2)}`;
-    item.onclick = () => { itemProdutoInput.value = p.nome; itemValorInput.value = p.valor; produtoSugestoes.innerHTML = ''; };
+    item.textContent = `${p.nome} — R$ ${formatMoedaBR(parseMoedaBR(p.valor))}`;
+    item.onclick = () => { itemProdutoInput.value = p.nome; itemValorInput.value = formatMoedaBR(parseMoedaBR(p.valor)); produtoSugestoes.innerHTML = ''; };
     produtoSugestoes.appendChild(item);
   });
 });
@@ -946,8 +961,8 @@ function buildDocumentoHTML(d) {
     <tr>
       <td>${escapeHtml(it.nome)}</td>
       <td class="text-center">${it.qtd}</td>
-      <td class="text-end">R$ ${it.valor.toFixed(2)}</td>
-      <td class="text-end">R$ ${(it.valor * it.qtd).toFixed(2)}</td>
+      <td class="text-end">R$ ${formatMoedaBR(it.valor)}</td>
+      <td class="text-end">R$ ${formatMoedaBR(it.valor * it.qtd)}</td>
     </tr>`).join('') : `<tr><td colspan="4" class="text-muted text-center py-4">Nenhum item adicionado ainda</td></tr>`;
 
   return `
@@ -976,10 +991,10 @@ function buildDocumentoHTML(d) {
       <tbody>${itensHTML}</tbody>
     </table>
     <div class="doc-summary">
-      <div class="row-line"><span>Subtotal</span><span>R$ ${d.subtotal.toFixed(2)}</span></div>
-      ${d.descontoValor > 0 ? `<div class="row-line" style="color:#dc2626"><span>Desconto${d.descontoTipo === 'percent' && d.descontoInput ? ` (${d.descontoInput}%)` : ''}</span><span>- R$ ${d.descontoValor.toFixed(2)}</span></div>` : ''}
-      ${d.frete > 0 ? `<div class="row-line"><span>Frete</span><span>R$ ${d.frete.toFixed(2)}</span></div>` : ''}
-      <div class="row-line total"><span>Total</span><span>R$ ${d.total.toFixed(2)}</span></div>
+      <div class="row-line"><span>Subtotal</span><span>R$ ${formatMoedaBR(d.subtotal)}</span></div>
+      ${d.descontoValor > 0 ? `<div class="row-line" style="color:#dc2626"><span>Desconto${d.descontoTipo === 'percent' && d.descontoInput ? ` (${d.descontoInput}%)` : ''}</span><span>- R$ ${formatMoedaBR(d.descontoValor)}</span></div>` : ''}
+      ${d.frete > 0 ? `<div class="row-line"><span>Frete</span><span>R$ ${formatMoedaBR(d.frete)}</span></div>` : ''}
+      <div class="row-line total"><span>Total</span><span>R$ ${formatMoedaBR(d.total)}</span></div>
     </div>
     <div class="doc-footer-note">Orçamento gerado pelo sistema — sujeito a alteração sem aviso prévio.</div>
   `;
@@ -1006,10 +1021,10 @@ function getOrcamentoData() {
 function renderPreview() {
   const d = getOrcamentoData();
   documentoPreview.innerHTML = buildDocumentoHTML(d);
-  resSubtotal.textContent = `R$ ${d.subtotal.toFixed(2)}`;
-  resDesconto.textContent = `- R$ ${d.descontoValor.toFixed(2)}`;
-  resFrete.textContent = `R$ ${d.frete.toFixed(2)}`;
-  resTotal.textContent = `R$ ${d.total.toFixed(2)}`;
+  resSubtotal.textContent = `R$ ${formatMoedaBR(d.subtotal)}`;
+  resDesconto.textContent = `- R$ ${formatMoedaBR(d.descontoValor)}`;
+  resFrete.textContent = `R$ ${formatMoedaBR(d.frete)}`;
+  resTotal.textContent = `R$ ${formatMoedaBR(d.total)}`;
 }
 [orcClienteNome, orcClienteCnpj, orcClienteTelefone, orcClienteEmail, orcClienteEndereco, orcVendedorNome, orcData, orcDescontoValor, orcDescontoTipo, orcFrete].forEach(el => el.addEventListener('input', renderPreview));
 
@@ -1029,10 +1044,10 @@ async function baixarPDF(el, nomeBase) {
 function resumoTexto(d) {
   const linhas = [`*Orçamento - ${d.empresaNome || ''}*`, `Cliente: ${d.cliente || '-'}`, `Data: ${d.dataStr}`, ''];
   d.itens.forEach(it => linhas.push(`- ${it.nome} x${it.qtd} — R$ ${(it.valor * it.qtd).toFixed(2)}`));
-  linhas.push('', `Subtotal: R$ ${d.subtotal.toFixed(2)}`);
-  if (d.descontoValor > 0) linhas.push(`Desconto: R$ ${d.descontoValor.toFixed(2)}`);
-  if (d.frete > 0) linhas.push(`Frete: R$ ${d.frete.toFixed(2)}`);
-  linhas.push(`Total: R$ ${d.total.toFixed(2)}`);
+  linhas.push('', `Subtotal: R$ ${formatMoedaBR(d.subtotal)}`);
+  if (d.descontoValor > 0) linhas.push(`Desconto: R$ ${formatMoedaBR(d.descontoValor)}`);
+  if (d.frete > 0) linhas.push(`Frete: R$ ${formatMoedaBR(d.frete)}`);
+  linhas.push(`Total: R$ ${formatMoedaBR(d.total)}`);
   return linhas.join('\n');
 }
 function abrirFallbackCompartilhar(texto) {
@@ -1136,7 +1151,7 @@ function renderHistoricoList() {
           <div class="small text-muted">${formatDataBR(o.data)} • ${(o.itens || []).length} item(ns)</div>
         </div>
         <div class="text-end d-flex flex-column gap-1">
-          <div class="fw-bold" style="color:var(--brand-dark)">R$ ${Number(o.total ?? 0).toFixed(2)}</div>
+          <div class="fw-bold" style="color:var(--brand-dark)">R$ ${formatMoedaBR(parseMoedaBR(o.total ?? 0))}</div>
           <button class="btn btn-sm btn-outline-primary" onclick="abrirHistoricoById('${o.id}')"><i class="bi bi-eye"></i> Abrir</button>
           <button class="btn btn-sm btn-outline-danger" onclick="deleteOrcamento('${o.id}')"><i class="bi bi-trash"></i> Excluir</button>
         </div>
@@ -1333,9 +1348,9 @@ orcDescontoTipo.addEventListener('change', () => {
   renderPreview();
 });
 
-itemValorInput.value = formatMoedaBR(0);
-prodValorInput.value = formatMoedaBR(0);
-orcFrete.value = formatMoedaBR(0);
+if (!itemValorInput.value) itemValorInput.value = formatMoedaBR(0);
+if (!prodValorInput.value) prodValorInput.value = formatMoedaBR(0);
+if (!orcFrete.value) orcFrete.value = formatMoedaBR(0);
 
 renderPreview();
 </script>
