@@ -132,6 +132,7 @@
       <li class="nav-item"><button class="nav-link active" data-tab="orcamento">Novo Orçamento</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="historico">Histórico</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="produtos">Produtos</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="empresas-clientes">Empresas</button></li>
       <li class="nav-item d-none" id="empresaTabItem"><button class="nav-link" data-tab="empresa">Dados da Empresa</button></li>
     </ul>
 
@@ -288,6 +289,43 @@
       </div>
     </div>
 
+    <!-- ---- ABA EMPRESAS (cadastro separado) ---- -->
+    <div class="tab-pane d-none" id="tab-empresas-clientes">
+      <div class="card p-4 mb-3">
+        <h6 class="fw-bold mb-3">Cadastrar / atualizar empresa (cliente)</h6>
+        <input type="hidden" id="empresaClienteIdInput">
+        <div class="row g-2">
+          <div class="col-md-4">
+            <input type="text" class="form-control" id="empresaClienteNomeInput" placeholder="Nome da empresa" />
+          </div>
+          <div class="col-md-2">
+            <input type="text" class="form-control" id="empresaClienteCnpjInput" placeholder="CNPJ" />
+          </div>
+          <div class="col-md-2">
+            <input type="text" class="form-control" id="empresaClienteTelefoneInput" placeholder="Telefone" />
+          </div>
+          <div class="col-md-2">
+            <input type="email" class="form-control" id="empresaClienteEmailInput" placeholder="E-mail" />
+          </div>
+          <div class="col-md-2">
+            <button class="btn brand-btn text-white w-100" id="saveEmpresaClienteBtn">Salvar empresa</button>
+          </div>
+          <div class="col-md-12">
+            <input type="text" class="form-control" id="empresaClienteEnderecoInput" placeholder="Endereço" />
+          </div>
+        </div>
+        <div id="empresaClienteAlert" class="alert py-2 mt-3 d-none"></div>
+      </div>
+
+      <div class="card p-4">
+        <h6 class="fw-bold mb-3">Empresas cadastradas</h6>
+        <table class="table">
+          <thead><tr><th>Empresa</th><th>CNPJ</th><th>Contato</th><th>Endereço</th><th></th></tr></thead>
+          <tbody id="empresasClientesTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ---- ABA EMPRESA (admin) ---- -->
     <div class="tab-pane d-none" id="tab-empresa">
       <div class="card p-4">
@@ -425,7 +463,7 @@ if (SUPABASE_URL.includes('SEU-PROJETO') || !SUPABASE_ANON_KEY) {
   document.getElementById('configWarning').style.display = 'block';
 }
 
-const state = { accessToken: null, user: null, profile: null, produtos: [], clientes: [], itens: [], empresa: null, logoBase64: null, historico: [] };
+const state = { accessToken: null, user: null, profile: null, produtos: [], clientes: [], empresasClientes: [], itens: [], empresa: null, logoBase64: null, historico: [] };
 let historicoAtualData = null;
 
 function authHeaders(json = true) {
@@ -580,12 +618,22 @@ async function deleteProduto(id) {
   await fetch(`${SUPABASE_URL}/rest/v1/produtos?id=eq.${id}`, { method: 'DELETE', headers: authHeaders() });
   await loadProdutos();
 }
+function editarProduto(id) {
+  const p = state.produtos.find(x => x.id === id);
+  if (!p) return;
+  prodNomeInput.value = p.nome || '';
+  prodValorInput.value = Number(p.valor || 0);
+  showAlert('produtoAlert', 'Produto carregado para edição. Altere os dados e clique em Salvar produto.', 'warning');
+}
 function renderProdutosTable() {
   produtosTableBody.innerHTML = state.produtos.map(p => `
     <tr>
       <td>${escapeHtml(p.nome)}</td>
       <td>R$ ${Number(p.valor).toFixed(2)}</td>
-      <td><button class="btn btn-sm btn-outline-danger" onclick="deleteProduto('${p.id}')"><i class="bi bi-trash"></i></button></td>
+      <td class="d-flex gap-1 justify-content-end">
+        <button class="btn btn-sm btn-outline-primary" onclick="editarProduto('${p.id}')"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteProduto('${p.id}')"><i class="bi bi-trash"></i></button>
+      </td>
     </tr>`).join('') || '<tr><td colspan="3" class="text-muted">Nenhum produto cadastrado ainda.</td></tr>';
 }
 itemProdutoInput.addEventListener('input', () => {
@@ -603,6 +651,79 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#itemProdutoInput') && !e.target.closest('#produtoSugestoes')) produtoSugestoes.innerHTML = '';
   if (!e.target.closest('#orcClienteNome') && !e.target.closest('#clienteSugestoes')) clienteSugestoes.innerHTML = '';
 });
+
+/* ---------------- EMPRESAS (CADASTRO SEPARADO) ---------------- */
+async function loadEmpresasClientes() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/empresas_clientes?select=*&order=nome.asc`, { headers: authHeaders() });
+  if (!res.ok) {
+    state.empresasClientes = [];
+    return;
+  }
+  state.empresasClientes = await res.json();
+  renderEmpresasClientesTable();
+}
+async function upsertEmpresaCliente(payload) {
+  const hasCnpj = !!(payload.cnpj && payload.cnpj.trim());
+  const url = hasCnpj
+    ? `${SUPABASE_URL}/rest/v1/empresas_clientes?on_conflict=cnpj`
+    : `${SUPABASE_URL}/rest/v1/empresas_clientes`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Erro ao salvar empresa: ${errText || res.status}`);
+  }
+  await loadEmpresasClientes();
+}
+async function deleteEmpresaCliente(id) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/empresas_clientes?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders(), Prefer: 'return=minimal' }
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Erro ao excluir empresa: ${errText || res.status}`);
+  }
+  await loadEmpresasClientes();
+}
+function editarEmpresaCliente(id) {
+  const emp = state.empresasClientes.find(e => e.id === id);
+  if (!emp) return;
+  empresaClienteIdInput.value = emp.id || '';
+  empresaClienteNomeInput.value = emp.nome || '';
+  empresaClienteCnpjInput.value = emp.cnpj || '';
+  empresaClienteTelefoneInput.value = emp.telefone || '';
+  empresaClienteEmailInput.value = emp.email || '';
+  empresaClienteEnderecoInput.value = emp.endereco || '';
+  showAlert('empresaClienteAlert', 'Empresa carregada para edição. Altere os dados e clique em Salvar empresa.', 'warning');
+}
+function limparFormEmpresaCliente() {
+  empresaClienteIdInput.value = '';
+  empresaClienteNomeInput.value = '';
+  empresaClienteCnpjInput.value = '';
+  empresaClienteTelefoneInput.value = '';
+  empresaClienteEmailInput.value = '';
+  empresaClienteEnderecoInput.value = '';
+}
+function renderEmpresasClientesTable() {
+  empresasClientesTableBody.innerHTML = state.empresasClientes.map(e => `
+    <tr>
+      <td>${escapeHtml(e.nome || '')}</td>
+      <td>${escapeHtml(e.cnpj || '-')}</td>
+      <td>${escapeHtml([e.telefone, e.email].filter(Boolean).join(' · ') || '-')}</td>
+      <td>${escapeHtml(e.endereco || '-')}</td>
+      <td class="d-flex gap-1 justify-content-end">
+        <button class="btn btn-sm btn-outline-primary" onclick="editarEmpresaCliente('${e.id}')"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteEmpresaCliente('${e.id}')"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="text-muted">Nenhuma empresa cadastrada ainda.</td></tr>';
+}
 
 /* ---------------- CLIENTES ---------------- */
 async function loadClientes() {
@@ -646,18 +767,21 @@ orcClienteNome.addEventListener('input', () => {
   clienteSugestoes.innerHTML = '';
   if (!term) return;
 
-  state.clientes
+  const sugestoesClientes = state.clientes.map(c => ({ ...c, __origem: 'cliente' }));
+  const sugestoesEmpresas = state.empresasClientes.map(e => ({ ...e, __origem: 'empresa' }));
+
+  [...sugestoesClientes, ...sugestoesEmpresas]
     .filter(c =>
       (c.nome || '').toLowerCase().includes(term) ||
       (c.cnpj || '').toLowerCase().includes(term) ||
       (c.telefone || '').toLowerCase().includes(term)
     )
-    .slice(0, 6)
+    .slice(0, 8)
     .forEach(c => {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'list-group-item list-group-item-action produto-sugestao';
-      item.textContent = `${c.nome}${c.cnpj ? ` — ${c.cnpj}` : ''}`;
+      item.textContent = `${c.nome}${c.cnpj ? ` — ${c.cnpj}` : ''}${c.__origem === 'empresa' ? ' (empresa)' : ''}`;
       item.onclick = () => {
         orcClienteNome.value = c.nome || '';
         orcClienteCnpj.value = c.cnpj || '';
@@ -961,6 +1085,7 @@ document.querySelectorAll('#mainTabs button').forEach(btn => {
     document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('d-none');
     if (btn.dataset.tab === 'historico') loadHistorico();
     if (btn.dataset.tab === 'produtos') loadProdutos();
+    if (btn.dataset.tab === 'empresas-clientes') loadEmpresasClientes();
     if (btn.dataset.tab === 'empresa') loadEmpresa();
   });
 });
@@ -978,6 +1103,7 @@ async function enterApp() {
   await loadEmpresa();
   await loadProdutos();
   await loadClientes();
+  await loadEmpresasClientes();
 }
 
 /* ---------------- EVENTOS ---------------- */
@@ -1022,6 +1148,27 @@ saveProdutoBtn.addEventListener('click', async () => {
 saveEmpresaBtn.addEventListener('click', async () => {
   try { await saveEmpresa(); showAlert('empresaAlert', 'Dados da empresa atualizados!', 'success'); }
   catch (err) { showAlert('empresaAlert', err.message); }
+});
+
+saveEmpresaClienteBtn.addEventListener('click', async () => {
+  const payload = {
+    nome: (empresaClienteNomeInput.value || '').trim(),
+    cnpj: (empresaClienteCnpjInput.value || '').trim(),
+    telefone: (empresaClienteTelefoneInput.value || '').trim(),
+    email: (empresaClienteEmailInput.value || '').trim(),
+    endereco: (empresaClienteEnderecoInput.value || '').trim()
+  };
+  if (!payload.nome) {
+    showAlert('empresaClienteAlert', 'Informe ao menos o nome da empresa.');
+    return;
+  }
+  try {
+    await upsertEmpresaCliente(payload);
+    showAlert('empresaClienteAlert', 'Empresa salva com sucesso!', 'success');
+    limparFormEmpresaCliente();
+  } catch (err) {
+    showAlert('empresaClienteAlert', err.message);
+  }
 });
 
 renderPreview();
