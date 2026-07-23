@@ -185,7 +185,7 @@
               </div>
               <div class="col-md-2">
                 <label class="form-label small">Valor unit. (R$)</label>
-                <input type="number" step="0.01" class="form-control" id="itemValorInput">
+                <input type="text" class="form-control" id="itemValorInput" placeholder="0,00" inputmode="decimal">
               </div>
               <div class="col-md-2">
                 <label class="form-label small">Qtd</label>
@@ -209,7 +209,7 @@
             <div class="row g-2 align-items-end">
               <div class="col-md-3">
                 <label class="form-label small">Desconto</label>
-                <input type="number" step="0.01" min="0" class="form-control" id="orcDescontoValor" placeholder="0">
+                <input type="text" class="form-control" id="orcDescontoValor" placeholder="0,00" inputmode="decimal">
               </div>
               <div class="col-md-3">
                 <label class="form-label small">Tipo</label>
@@ -220,7 +220,7 @@
               </div>
               <div class="col-md-3">
                 <label class="form-label small">Frete (R$)</label>
-                <input type="number" step="0.01" min="0" class="form-control" id="orcFrete" placeholder="0">
+                <input type="text" class="form-control" id="orcFrete" placeholder="0,00" inputmode="decimal">
               </div>
             </div>
 
@@ -271,7 +271,7 @@
             <input type="text" class="form-control" id="prodNomeInput" placeholder="Nome do produto">
           </div>
           <div class="col-md-3">
-            <input type="number" step="0.01" class="form-control" id="prodValorInput" placeholder="Valor (R$)">
+            <input type="text" class="form-control" id="prodValorInput" placeholder="Valor (R$)" inputmode="decimal">
           </div>
           <div class="col-md-3">
             <button class="btn brand-btn text-white w-100" id="saveProdutoBtn">Salvar produto</button>
@@ -488,6 +488,49 @@ function formatDataBR(iso) {
   if (!iso) return new Date().toLocaleDateString('pt-BR');
   const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`;
 }
+function onlyDigits(v) { return String(v || '').replace(/\D/g, ''); }
+function formatCpfCnpj(v) {
+  const d = onlyDigits(v).slice(0, 14);
+  if (d.length <= 11) {
+    return d
+      .replace(/^(\d{3})(\d)/, '$1.$2')
+      .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d)/, '.$1-$2');
+  }
+  return d
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
+function formatTelefoneBR(v) {
+  const d = onlyDigits(v).slice(0, 11);
+  if (d.length <= 10) {
+    return d
+      .replace(/^(\d{2})(\d)/, '($1)$2')
+      .replace(/(\d{4})(\d)/, '$1-$2');
+  }
+  return d
+    .replace(/^(\d{2})(\d)/, '($1)$2')
+    .replace(/(\d{5})(\d)/, '$1-$2');
+}
+function parseMoedaBR(v) {
+  if (v == null) return 0;
+  const s = String(v).trim();
+  if (!s) return 0;
+  const normalizado = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  const n = parseFloat(normalizado);
+  return Number.isFinite(n) ? n : 0;
+}
+function formatMoedaBR(n) {
+  const val = Number(n || 0);
+  return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function applyMoedaMaskInput(el) {
+  const d = onlyDigits(el.value);
+  const n = Number(d || 0) / 100;
+  el.value = formatMoedaBR(n);
+}
 
 /* ---------------- AUTENTICAÇÃO ---------------- */
 async function login(email, password) {
@@ -622,7 +665,7 @@ function editarProduto(id) {
   const p = state.produtos.find(x => x.id === id);
   if (!p) return;
   prodNomeInput.value = p.nome || '';
-  prodValorInput.value = Number(p.valor || 0);
+  prodValorInput.value = formatMoedaBR(Number(p.valor || 0));
   showAlert('produtoAlert', 'Produto carregado para edição. Altere os dados e clique em Salvar produto.', 'warning');
 }
 function renderProdutosTable() {
@@ -853,8 +896,8 @@ orcClienteNome.addEventListener('input', () => {
       item.textContent = `${c.nome}${c.cnpj ? ` — ${c.cnpj}` : ''}${c.__origem === 'empresa' ? ' (empresa)' : ''}`;
       item.onclick = () => {
         orcClienteNome.value = c.nome || '';
-        orcClienteCnpj.value = c.cnpj || '';
-        orcClienteTelefone.value = c.telefone || '';
+        orcClienteCnpj.value = formatCpfCnpj(c.cnpj || '');
+        orcClienteTelefone.value = formatTelefoneBR(c.telefone || '');
         orcClienteEmail.value = c.email || '';
         orcClienteEndereco.value = c.endereco || '';
         clienteSugestoes.innerHTML = '';
@@ -867,7 +910,7 @@ orcClienteNome.addEventListener('input', () => {
 /* ---------------- ITENS / CÁLCULOS ---------------- */
 function addItem() {
   const nome = itemProdutoInput.value.trim();
-  const valor = parseFloat(itemValorInput.value);
+  const valor = parseMoedaBR(itemValorInput.value);
   const qtd = parseInt(itemQtdInput.value) || 1;
   if (!nome || isNaN(valor)) { showAlert('orcamentoAlert', 'Informe produto e valor válidos.'); return; }
   hideAlert('orcamentoAlert');
@@ -887,10 +930,12 @@ function renderItens() {
 }
 function calcTotais() {
   const subtotal = state.itens.reduce((s, it) => s + it.valor * it.qtd, 0);
-  const descontoInput = parseFloat(orcDescontoValor.value) || 0;
   const tipo = orcDescontoTipo.value;
+  const descontoInput = tipo === 'percent'
+    ? (parseFloat(String(orcDescontoValor.value).replace(',', '.')) || 0)
+    : parseMoedaBR(orcDescontoValor.value);
   const descontoValor = tipo === 'percent' ? subtotal * (descontoInput / 100) : descontoInput;
-  const frete = parseFloat(orcFrete.value) || 0;
+  const frete = parseMoedaBR(orcFrete.value);
   const total = Math.max(subtotal - descontoValor + frete, 0);
   return { subtotal, descontoValor, descontoInput, tipo, frete, total };
 }
@@ -1209,9 +1254,9 @@ downloadPdfBtn.addEventListener('click', () => baixarPDF(documentoPreview, `orca
 shareBtn.addEventListener('click', () => compartilhar(documentoPreview, getOrcamentoData(), `orcamento_${(orcClienteNome.value || 'cliente').replace(/\s+/g, '_')}`));
 saveProdutoBtn.addEventListener('click', async () => {
   const nome = prodNomeInput.value.trim();
-  const valor = parseFloat(prodValorInput.value);
+  const valor = parseMoedaBR(prodValorInput.value);
   if (!nome || isNaN(valor)) { showAlert('produtoAlert', 'Preencha nome e valor.'); return; }
-  try { await upsertProduto(nome, valor); showAlert('produtoAlert', 'Produto salvo!', 'success'); prodNomeInput.value = ''; prodValorInput.value = ''; }
+  try { await upsertProduto(nome, valor); showAlert('produtoAlert', 'Produto salvo!', 'success'); prodNomeInput.value = ''; prodValorInput.value = formatMoedaBR(0); }
   catch (err) { showAlert('produtoAlert', err.message); }
 });
 saveEmpresaBtn.addEventListener('click', async () => {
@@ -1261,6 +1306,36 @@ empresasClientesTableBody.addEventListener('click', async (e) => {
     }
   }
 });
+
+[orcClienteCnpj, empCnpj, empresaClienteCnpjInput].forEach(el => {
+  if (!el) return;
+  el.addEventListener('input', () => { el.value = formatCpfCnpj(el.value); });
+});
+[orcClienteTelefone, empTelefone, empresaClienteTelefoneInput].forEach(el => {
+  if (!el) return;
+  el.addEventListener('input', () => { el.value = formatTelefoneBR(el.value); });
+});
+
+itemValorInput.addEventListener('input', () => applyMoedaMaskInput(itemValorInput));
+prodValorInput.addEventListener('input', () => applyMoedaMaskInput(prodValorInput));
+orcFrete.addEventListener('input', () => applyMoedaMaskInput(orcFrete));
+orcDescontoValor.addEventListener('input', () => {
+  if (orcDescontoTipo.value === 'valor') applyMoedaMaskInput(orcDescontoValor);
+});
+orcDescontoTipo.addEventListener('change', () => {
+  if (orcDescontoTipo.value === 'valor') {
+    orcDescontoValor.placeholder = '0,00';
+    orcDescontoValor.value = formatMoedaBR(parseMoedaBR(orcDescontoValor.value));
+  } else {
+    orcDescontoValor.placeholder = '%';
+    orcDescontoValor.value = String(parseFloat(String(orcDescontoValor.value).replace(',', '.')) || '');
+  }
+  renderPreview();
+});
+
+itemValorInput.value = formatMoedaBR(0);
+prodValorInput.value = formatMoedaBR(0);
+orcFrete.value = formatMoedaBR(0);
 
 renderPreview();
 </script>
