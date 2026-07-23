@@ -715,27 +715,50 @@ async function upsertEmpresaCliente(payload) {
   throw new Error('Erro ao salvar empresa: tabela de empresas não encontrada (nem empresas_clientes nem clientes).');
 }
 async function deleteEmpresaCliente(id) {
-  const endpoints = [
-    `${SUPABASE_URL}/rest/v1/empresas_clientes?id=eq.${id}`,
-    `${SUPABASE_URL}/rest/v1/clientes?id=eq.${id}`
-  ];
+  const registro = state.empresasClientes.find(e => e.id === id);
+  if (!registro) throw new Error('Empresa não encontrada para exclusão.');
 
-  for (const url of endpoints) {
+  const cnpj = (registro.cnpj || '').trim();
+  const nome = (registro.nome || '').trim();
+
+  const tentativas = [
+    `${SUPABASE_URL}/rest/v1/empresas_clientes?id=eq.${id}`,
+    cnpj ? `${SUPABASE_URL}/rest/v1/empresas_clientes?cnpj=eq.${encodeURIComponent(cnpj)}` : null,
+    nome ? `${SUPABASE_URL}/rest/v1/empresas_clientes?nome=eq.${encodeURIComponent(nome)}` : null,
+    `${SUPABASE_URL}/rest/v1/clientes?id=eq.${id}`,
+    cnpj ? `${SUPABASE_URL}/rest/v1/clientes?cnpj=eq.${encodeURIComponent(cnpj)}` : null,
+    nome ? `${SUPABASE_URL}/rest/v1/clientes?nome=eq.${encodeURIComponent(nome)}` : null
+  ].filter(Boolean);
+
+  let schemaExists = false;
+
+  for (const url of tentativas) {
     const res = await fetch(url, {
       method: 'DELETE',
-      headers: { ...authHeaders(), Prefer: 'return=minimal' }
+      headers: { ...authHeaders(), Prefer: 'return=representation' }
     });
+
     if (res.ok) {
-      await loadEmpresasClientes();
-      return;
+      schemaExists = true;
+      const deletedRows = await res.json().catch(() => []);
+      if (Array.isArray(deletedRows) && deletedRows.length > 0) {
+        await loadEmpresasClientes();
+        return;
+      }
+      continue;
     }
+
     const errText = await res.text();
     if (!isSchemaMissingError(errText)) {
       throw new Error(`Erro ao excluir empresa: ${errText || res.status}`);
     }
   }
 
-  throw new Error('Erro ao excluir empresa: tabela de empresas não encontrada (nem empresas_clientes nem clientes).');
+  if (!schemaExists) {
+    throw new Error('Erro ao excluir empresa: tabela de empresas não encontrada (nem empresas_clientes nem clientes).');
+  }
+
+  throw new Error('Nenhum registro foi excluído. Verifique se há RLS/policies permitindo DELETE e se a chave de busca (id/cnpj/nome) confere.');
 }
 function editarEmpresaCliente(id) {
   const emp = state.empresasClientes.find(e => e.id === id);
