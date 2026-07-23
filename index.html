@@ -459,26 +459,58 @@ async function login(email, password) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error_description || data.msg || 'Falha no login');
   state.accessToken = data.access_token; state.user = data.user;
+
+  await ensureProfile(state.user?.user_metadata?.nome || email);
   await loadProfile();
 }
+async function ensureProfile(profileNome = null) {
+  if (!state.user?.id) throw new Error('Usuário não autenticado para garantir profile.');
+  const payload = {
+    id: state.user.id,
+    nome: profileNome || state.user?.user_metadata?.nome || state.user?.email || 'Usuário',
+    role: 'user'
+  };
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?on_conflict=id`, {
+    method: 'POST',
+    headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Erro ao garantir perfil do usuário: ${errText || res.status}`);
+  }
+}
+
 async function registerUser(nome, email, password) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
     method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, password, data: { nome } })
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error_description || data.msg || 'Falha no cadastro');
+
   if (data.user) {
-    await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
-      method: 'POST', headers: { ...authHeaders(), Prefer: 'return=minimal' },
+    const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?on_conflict=id`, {
+      method: 'POST',
+      headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ id: data.user.id, nome, role: 'user' })
     });
+
+    if (!profileRes.ok) {
+      const errText = await profileRes.text();
+      throw new Error(`Conta criada, mas houve falha ao criar profile: ${errText || profileRes.status}`);
+    }
   }
+
   return data;
 }
 async function loadProfile() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${state.user.id}&select=*`, { headers: authHeaders() });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Falha ao carregar profile: ${errText || res.status}`);
+  }
   const rows = await res.json();
-  state.profile = rows[0] || { nome: state.user.email, role: 'user' };
+  state.profile = rows[0] || { id: state.user.id, nome: state.user.email, role: 'user' };
 }
 function logout() {
   state.accessToken = null; state.user = null; state.profile = null;
