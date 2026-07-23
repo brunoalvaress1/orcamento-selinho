@@ -764,8 +764,8 @@ function renderEmpresasClientesTable() {
       <td>${escapeHtml([e.telefone, e.email].filter(Boolean).join(' · ') || '-')}</td>
       <td>${escapeHtml(e.endereco || '-')}</td>
       <td class="d-flex gap-1 justify-content-end">
-        <button class="btn btn-sm btn-outline-primary" onclick="editarEmpresaCliente('${e.id}')"><i class="bi bi-pencil"></i></button>
-        <button class="btn btn-sm btn-outline-danger" onclick="deleteEmpresaCliente('${e.id}')"><i class="bi bi-trash"></i></button>
+        <button class="btn btn-sm btn-outline-primary btn-editar-empresa" data-id="${e.id}"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger btn-excluir-empresa" data-id="${e.id}"><i class="bi bi-trash"></i></button>
       </td>
     </tr>
   `).join('') || '<tr><td colspan="5" class="text-muted">Nenhuma empresa cadastrada ainda.</td></tr>';
@@ -1214,6 +1214,28 @@ saveEmpresaClienteBtn.addEventListener('click', async () => {
     limparFormEmpresaCliente();
   } catch (err) {
     showAlert('empresaClienteAlert', err.message);
+  }
+});
+
+empresasClientesTableBody.addEventListener('click', async (e) => {
+  const btnEditar = e.target.closest('.btn-editar-empresa');
+  if (btnEditar) {
+    const id = btnEditar.dataset.id;
+    if (id) editarEmpresaCliente(id);
+    return;
+  }
+
+  const btnExcluir = e.target.closest('.btn-excluir-empresa');
+  if (btnExcluir) {
+    const id = btnExcluir.dataset.id;
+    if (!id) return;
+    if (!confirm('Deseja realmente excluir esta empresa?')) return;
+    try {
+      await deleteEmpresaCliente(id);
+      showAlert('empresaClienteAlert', 'Empresa excluída com sucesso!', 'success');
+    } catch (err) {
+      showAlert('empresaClienteAlert', err.message);
+    }
   }
 });
 
