@@ -653,43 +653,89 @@ document.addEventListener('click', (e) => {
 });
 
 /* ---------------- EMPRESAS (CADASTRO SEPARADO) ---------------- */
+function isSchemaMissingError(txt = '') {
+  return txt.includes('PGRST205') || txt.includes('schema cache') || txt.includes('Could not find the table');
+}
 async function loadEmpresasClientes() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/empresas_clientes?select=*&order=nome.asc`, { headers: authHeaders() });
-  if (!res.ok) {
-    state.empresasClientes = [];
-    return;
+  const endpoints = [
+    `${SUPABASE_URL}/rest/v1/empresas_clientes?select=*&order=nome.asc`,
+    `${SUPABASE_URL}/rest/v1/clientes?select=*&order=nome.asc`
+  ];
+
+  for (const url of endpoints) {
+    const res = await fetch(url, { headers: authHeaders() });
+    if (res.ok) {
+      state.empresasClientes = await res.json();
+      renderEmpresasClientesTable();
+      return;
+    }
+    const errText = await res.text();
+    if (!isSchemaMissingError(errText)) {
+      state.empresasClientes = [];
+      throw new Error(`Erro ao carregar empresas: ${errText || res.status}`);
+    }
   }
-  state.empresasClientes = await res.json();
+
+  state.empresasClientes = [];
   renderEmpresasClientesTable();
 }
 async function upsertEmpresaCliente(payload) {
-  const hasCnpj = !!(payload.cnpj && payload.cnpj.trim());
-  const url = hasCnpj
-    ? `${SUPABASE_URL}/rest/v1/empresas_clientes?on_conflict=cnpj`
-    : `${SUPABASE_URL}/rest/v1/empresas_clientes`;
+  const payloadBase = { ...payload, updated_at: new Date().toISOString() };
+  const tentativas = [
+    {
+      semCnpj: `${SUPABASE_URL}/rest/v1/empresas_clientes`,
+      comCnpj: `${SUPABASE_URL}/rest/v1/empresas_clientes?on_conflict=cnpj`
+    },
+    {
+      semCnpj: `${SUPABASE_URL}/rest/v1/clientes`,
+      comCnpj: `${SUPABASE_URL}/rest/v1/clientes?on_conflict=cnpj`
+    }
+  ];
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() })
-  });
+  for (const t of tentativas) {
+    const hasCnpj = !!(payload.cnpj && payload.cnpj.trim());
+    const url = hasCnpj ? t.comCnpj : t.semCnpj;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(payloadBase)
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      await loadEmpresasClientes();
+      return;
+    }
+
     const errText = await res.text();
-    throw new Error(`Erro ao salvar empresa: ${errText || res.status}`);
+    if (!isSchemaMissingError(errText)) {
+      throw new Error(`Erro ao salvar empresa: ${errText || res.status}`);
+    }
   }
-  await loadEmpresasClientes();
+
+  throw new Error('Erro ao salvar empresa: tabela de empresas não encontrada (nem empresas_clientes nem clientes).');
 }
 async function deleteEmpresaCliente(id) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/empresas_clientes?id=eq.${id}`, {
-    method: 'DELETE',
-    headers: { ...authHeaders(), Prefer: 'return=minimal' }
-  });
-  if (!res.ok) {
+  const endpoints = [
+    `${SUPABASE_URL}/rest/v1/empresas_clientes?id=eq.${id}`,
+    `${SUPABASE_URL}/rest/v1/clientes?id=eq.${id}`
+  ];
+
+  for (const url of endpoints) {
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { ...authHeaders(), Prefer: 'return=minimal' }
+    });
+    if (res.ok) {
+      await loadEmpresasClientes();
+      return;
+    }
     const errText = await res.text();
-    throw new Error(`Erro ao excluir empresa: ${errText || res.status}`);
+    if (!isSchemaMissingError(errText)) {
+      throw new Error(`Erro ao excluir empresa: ${errText || res.status}`);
+    }
   }
-  await loadEmpresasClientes();
+
+  throw new Error('Erro ao excluir empresa: tabela de empresas não encontrada (nem empresas_clientes nem clientes).');
 }
 function editarEmpresaCliente(id) {
   const emp = state.empresasClientes.find(e => e.id === id);
